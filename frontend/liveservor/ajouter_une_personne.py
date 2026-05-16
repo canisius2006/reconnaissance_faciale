@@ -48,7 +48,7 @@ def get_embedding(chemin_photo):
     return visages[0].normed_embedding  # shape : (512,)
 
 #Charger le modèle d'abord 
-with open(r'/media/canisius/Disque local/Phoenix/martial_projet/Reconnaissance_Faciale/ownmodel/embeddings/embeddings.json','r') as f:
+with open(r'ownmodel/embeddings/embeddings.json','r') as f:
     base_json = json.load(f)
 
 # ─────────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ resultat = construire_base(path)
 base_json[resultat[0]] = resultat[1].tolist() #De array en liste
 
 # Sauvegarder : 
-with open(r'/media/canisius/Disque local/Phoenix/martial_projet/Reconnaissance_Faciale/ownmodel/embeddings/embeddings.json', 'w') as f:
+with open(r'ownmodel/embeddings/embeddings.json', 'w') as f:
     json.dump(base_json, f)
 
 print(f"\n Base de {len(base_json)} personnes sauvegardée")

@@ -131,7 +131,7 @@ function afficher(name,url){
     button1.classList.add('entrer', 'bouton')
     button1.textContent = 'Voir'
     spannew.classList.add('nom-room')
-    spannew.textContent=name
+    spannew.textContent=name 
     button2.classList.add('fermer' ,'bouton')
     button2.textContent = 'Fermer'
 

@@ -14,6 +14,8 @@
 import numpy as np
 import cv2, os, json
 from insightface.app import FaceAnalysis
+import tkinter as tk 
+from tkinter import filedialog
 
 # buffalo_l = grand modèle, plus précis que buffalo_sc
 # À utiliser ici car on fait ça une seule fois (pas en temps réel)
@@ -84,13 +86,14 @@ def construire_base(dossier_propre):
     return base
 
 # Construire et sauvegarder la base
-BASE_EMBEDDINGS = construire_base('image')
+chemin = filedialog.askdirectory(title="Choisissez le dossier contenant les images pour construire la base d'embeddings")
+BASE_EMBEDDINGS = construire_base(chemin)
 
 
 
 # Sauvegarder : convertir les arrays numpy en listes Python pour JSON
 base_json = {nom: emb.tolist() for nom, emb in BASE_EMBEDDINGS.items()}
-with open(r'D:\Phoenix\martial_projet\Reconnaissance_Faciale\ownmodel\embeddings\embeddings.json', 'w') as f:
+with open(r'ownmodel\embeddings\embeddings.json', 'w') as f:
     json.dump(base_json, f)
 
 print(f"\n Base de {len(BASE_EMBEDDINGS)} personnes sauvegardée")

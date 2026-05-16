@@ -17,9 +17,19 @@ import tkinter
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+try:
+    with open('nom_model.txt','r') as f:
+        modele = f.read()
+except Exception as e:
+    print('Modèle non chargable, sélectionner une path',e)
+    modele = filedialog.askopenfilename(title='Selectionner le nom du model')
+    with open('nom_model.txt','w') as f:
+        f.write(modele)
+
+
 # Charger la base d'embeddings sauvegardée
 
-with open(r'/media/canisius/Disque local/Phoenix/martial_projet/Reconnaissance_Faciale/ownmodel/embeddings/embeddings.json', 'r') as f:
+with open(modele, 'r') as f:
     base_json = json.load(f)
 #On aura besoin de numpy pour pouvoir faire des arrays afin de profiter de la puissance de numpy 
 liste_nom = np.array(list(base_json.keys()))
