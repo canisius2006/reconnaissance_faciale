@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Dahsboard {% endblock title %}
+{% block head %}
+<link rel='stylesheet' href={% static "css/dashboard.css" %}>
+
+{% endblock head %}
+{% block body %}
+    <!-- ===== HEADER ===== -->
+    <div id="app-header">
+        <div class="header-left">
+            <span class="header-title">Tableau de <span class="header_title_side">Board</span></span>
+        </div>
+    </div>
+
+    <!-- ===== CONTENEUR PRINCIPAL ===== -->
+    <main id="app-container">
+
+        <!-- ===== PANEL GAUCHE ===== -->
+        <section id="left-panel">
+            <div class="left-scroll">
+                <div class="server-header">
+                    <span class="server-header-title">Liste des Cadres</span>
+                </div>
+                <div class="channels-list" id="channels-list">
+                    <div class="channel-category">
+                        <div class="category-header">
+                            <span class="category-add" id="btn-ajouter-source">Ajouter +</span>
+                        </div>
+                        <div class="channel-items" id="channel-items-container">
+                            <!-- Rempli dynamiquement par ajouterCadreGauche() -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Resizer 1 -->
+        <div id="resizer1" class="resizer"></div>
+
+        <!-- ===== PANEL MILIEU ===== -->
+        <section id="mid-panel">
+            <div class="mid-header">
+                <div class="mid-header-left"></div>
+                <div class="mid-header-quality">
+                    <div class="pulse-dot"></div>
+                    Transmission en live
+                </div>
+            </div>
+            <div id="video-stage-container">
+                <div id="main-video-area"><!-- Géré en JS --></div>
+                <div id="bottom-strip" class="hidden"><!-- Géré en JS --></div>
+            </div>
+        </section>
+
+        <!-- Resizer 2 -->
+        <div id="resizer2" class="resizer"></div>
+
+        <!-- ===== PANEL DROIT ===== -->
+        <section id="right-panel">
+            <div class="right-header">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span class="right-header-title">Reconnues par Cadre</span>
+                    <span class="members-count-badge" id="members-count">0</span>
+                </div>
+            </div>
+            <div id="members-list-container"><!-- Géré en JS --></div>
+        </section>
+
+    </main>
+
+    <!-- ===== POP-UP AJOUT SOURCE ===== -->
+    <div id="camera-popup" class="pop-up">
+        <div class="formulaire">
+            <!-- Bouton fermer -->
+            <button onclick="togglePopup(false)" style="position:absolute;top:16px;right:16px;background:none;border:none;cursor:pointer;color:#64748b;" class="transition-colors hover:text-white">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            </button>
+
+            <!-- Titre -->
+            <div class="text-left">
+                <h3 class="text-lg font-bold text-white">Ajouter une Source</h3>
+                <p class="text-xs text-slate-400">Configurez l'accès à votre flux de surveillance</p>
+            </div>
+
+            <!-- Onglets -->
+            <div class="tab-bar">
+                <div id="tab-url"    class="tab-btn actif" onclick="switchMethod('url')">Lien URL</div>
+                <div id="tab-image"  class="tab-btn"       onclick="switchMethod('image')">Image</div>
+                <div id="tab-video"  class="tab-btn"       onclick="switchMethod('video')">Vidéo</div>
+                <div id="tab-webcam" class="tab-btn"       onclick="switchMethod('webcam')">Caméra PC</div>
+            </div>
+
+            <!-- Formulaire -->
+            <form id="cam-form" onsubmit="handleSubmit(event)" class="space-y-4 flex flex-col" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                <!-- Nom -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1\.5">Nom de la caméra</label>
+                    <input type="text" placeholder="Entrer un nom de cam" name="name" required id="cam-name">
+                </div>
+
+                <!-- URL -->
+                <div id="field-url">
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1\.5">Adresse URL du flux</label>
+                    <input type="url" placeholder="Entrer l'url (ex: https://monflux.com/live)" name="url" id="url-input" required>
+                </div>
+
+                <!-- Image -->
+                <div id="field-image" class="hidden">
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1\.5">Téléverser une image de flux</label>
+                    <input type="file" accept="image/*" name="image_file" id="file-image-input" class="hidden" onchange="previewImage(this)">
+                    <div class="preview_div" onclick="document.getElementById('file-image-input').click()">
+                        <span id="plus">+</span>
+                        <img id="image-preview" class="preview-media" alt="Aperçu Image">
+                    </div>
+                </div>
+
+                <!-- Vidéo -->
+                <div id="field-video" class="hidden">
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1\.5">Téléverser un fichier vidéo</label>
+                    <input type="file" accept="video/*" name="video_file" id="file-video-input" class="hidden" onchange="previewVideo(this)">
+                    <div class="preview_div" onclick="document.getElementById('file-video-input').click()">
+                        <div id="plus-video-container" class="flex flex-col items-center">
+                            <span id="plus-video">+</span>
+                            <span class="text-xs text-slate-500" style="margin-top:4px;font-size:10px;">Sélectionner MP4, MKV...</span>
+                        </div>
+                        <video id="video-preview" class="preview-media" autoplay loop muted playsinline></video>
+                    </div>
+                </div>
+
+                <!-- Webcam -->
+                <div id="field-webcam" class="hidden">
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1\.5">Flux Caméra PC en direct</label>
+                    <div class="preview_div relative">
+                        <video id="webcam-view" autoplay playsinline muted></video>
+                        <div id="webcam-placeholder" class="flex flex-col items-center justify-center text-center p-4">
+                            <svg class="w-8 h-8 text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                            </svg>
+                            <button type="button" onclick="toggleWebcam(true)" class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors shadow" style="font-size:12px;border:none;cursor:pointer;font-family:inherit;">
+                                Activer la caméra
+                            </button>
+                        </div>
+                        <div id="webcam-active-badge" class="hidden animate-pulse">En direct</div>
+                    </div>
+                </div>
+
+                <span class="info" id="feedback-info"></span>
+                <button type="submit" class="confirmer">Confirmer</button>
+            </form>
+        </div>
+    </div>
+<script src={% static "js/dashboard.js" %}></script>
+{% endblock body %}

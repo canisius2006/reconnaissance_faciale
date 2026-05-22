@@ -47,8 +47,21 @@ def get_embedding(chemin_photo):
     # soit simplement un produit scalaire (plus rapide à calculer)
     return visages[0].normed_embedding  # shape : (512,)
 
+
+# Ouverture du modèle de reconnaissance json
+try:
+    with open('nom_model.txt', 'r') as f:
+        modele = f.read().strip()
+except Exception as e:
+    print('Modèle non chargable, sélectionner une path', e)
+    modele = filedialog.askopenfilename(title='Selectionner le nom du model')
+    with open('nom_model.txt', 'w') as f:
+        f.write(modele)
+
+
+
 #Charger le modèle d'abord 
-with open(r'ownmodel/embeddings/embeddings.json','r') as f:
+with open(modele,'r') as f:
     base_json = json.load(f)
 
 # ─────────────────────────────────────────────────────────────
@@ -90,7 +103,7 @@ resultat = construire_base(path)
 base_json[resultat[0]] = resultat[1].tolist() #De array en liste
 
 # Sauvegarder : 
-with open(r'ownmodel/embeddings/embeddings.json', 'w') as f:
+with open(modele, 'w') as f:
     json.dump(base_json, f)
 
 print(f"\n Base de {len(base_json)} personnes sauvegardée")

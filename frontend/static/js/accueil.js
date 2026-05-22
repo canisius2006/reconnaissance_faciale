@@ -1,4 +1,4 @@
 const bouton = document.querySelector('.primary')
 bouton.addEventListener('click',()=>{
-    window.location.pathname='entree/'
+    window.location.pathname='dashboard/'
 })

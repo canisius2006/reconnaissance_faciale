@@ -18,18 +18,18 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 try:
-    with open('nom_model.txt','r') as f:
-        modele = f.read()
+    with open('nom_base.txt','r') as f:
+        base = f.read()
 except Exception as e:
     print('Modèle non chargable, sélectionner une path',e)
-    modele = filedialog.askopenfilename(title='Selectionner le nom du model')
-    with open('nom_model.txt','w') as f:
-        f.write(modele)
+    base = filedialog.askopenfilename(title='Selectionner le nom de la base de données')
+    with open('nom_base.txt','w') as f:
+        f.write(base)
 
 
 # Charger la base d'embeddings sauvegardée
 
-with open(modele, 'r') as f:
+with open(base, 'r') as f:
     base_json = json.load(f)
 #On aura besoin de numpy pour pouvoir faire des arrays afin de profiter de la puissance de numpy 
 liste_nom = np.array(list(base_json.keys()))
@@ -104,20 +104,11 @@ def identifier(chemin_photo):
 
 
 
-def identifier_serveur_image(arg):
+def identifier_serveur_image(img):
     """Cette fonction va nous permettre d'indentifier un visage mais en passant par le serveur avec le mode image
     Retourne (nom, similarité) ou ('INCONNU', similarité_max)"""
-    data = [] #Une liste vide pour récueillir les résultats à la fin et pour connaitre le nombre 
-    lisible = 1;visible = 1 #Par défaut, on dira que ces deux là sont tous=1
-    
-    # 2. Lire les octets du fichier (le transformer en buffer)
-    file_bytes = np.frombuffer(arg.read(), np.uint8)
-
-    # 3. Décoder le buffer pour obtenir une image OpenCV (format BGR)
-    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-
-    #Maintenant, on fait la reconnaissance faciale 
-    
+    personnes = [] #Une liste vide pour récueillir les noms des personnes reconnues à la fin 
+    #Maintenant, on fait la reconnaissance faciale  
     if img is None:
         print(" Image illisible")
         lisible=0 #Pour dire null
@@ -150,7 +141,8 @@ def identifier_serveur_image(arg):
             nom_final = nom_max 
             couleur   = (0, 255, 0)
             print(f"Reconnu : {nom_final} | Similarité : {max_valeur:.3f}")
-            
+            personnes.append(nom_final)
+            personnes = list(tuple(personnes)) # Cette fonction permet de supprimer les noms en doubles dans personnes 
         else:
             nom_final = "INCONNU"
             couleur   = (0, 0, 255)
@@ -158,15 +150,10 @@ def identifier_serveur_image(arg):
 
         # Afficher le résultat
         x1, y1, x2, y2 = visage.bbox.astype(int)
-        #On va calculer la position des nouvelles coordonnées pour mieux faire la scalabilité au niveau du frontend
-        x1=x1/width #640 est notre taille ici 
-        x2 = x2/width 
-        y1 = y1/height 
-        y2 = y2/height
-        dictionnaire = {'nom':nom_final,'lisible':lisible,'visible':visible,'score':round(max_valeur,2),'cadre':{"x1":x1,"x2":x2,"y1":y1,"y2":y2}}
-        data.append(dictionnaire)
-    print(len(data))
-    return data 
+        cv2.rectangle(img, (x1,y1), (x2,y2), couleur, 2)
+        cv2.putText(img, nom_final, (x1, y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, couleur, 2)
+    return img,personnes
        
 
 if __name__=='__main__':

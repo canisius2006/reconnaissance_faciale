@@ -120,3 +120,9 @@ STATIC_URL = 'static/'
 STATICFILES_DIRS = [
     BASE_DIR/'static'
 ]
+#Configuration des médias 
+# Chemin absolu du dossier où Django stockera les fichiers médias localement
+MEDIA_ROOT = BASE_DIR/'media'
+
+# L'URL publique pour accéder à ces fichiers via le navigateur
+MEDIA_URL = '/media/'
