@@ -19,10 +19,16 @@ from django.urls import path,include
 from django.conf import settings
 from django.conf.urls.static import static
 
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('',include('liveservor.urls'))
+    path('',include('liveservor.urls')),
+    # ✅ Sert les médias indépendamment de DEBUG
+    # path('media/<path:path>', serve, {'document_root': settings.MEDIA_ROOT}),
 ]
-
-# Ajout des configurations pour servir les fichiers médias en développement
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# # Ajoute cette ligne pour servir les fichiers statiques pendant le développement
+# urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+# # Si vous utilisez STATICFILES_DIRS, ajoutez aussi ceci :
+# urlpatterns += static(settings.STATIC_URL, document_root=settings.BASE_DIR / 'static')

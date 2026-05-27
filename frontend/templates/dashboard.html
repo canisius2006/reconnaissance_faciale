@@ -9,7 +9,12 @@
     <!-- ===== HEADER ===== -->
     <div id="app-header">
         <div class="header-left">
-            <span class="header-title">Tableau de <span class="header_title_side">Board</span></span>
+            <img class="retour" src={% static "img/retour.png" %} alt="Retour" title="Retour">
+            <span class="header-title">Tableau de <span class="header_title_side">Bord</span></span>
+        </div>
+        <div class='menu'>
+            <span >Menu</span>
+            <span class="menu-t">☰</span>
         </div>
     </div>
 
@@ -43,8 +48,7 @@
             <div class="mid-header">
                 <div class="mid-header-left"></div>
                 <div class="mid-header-quality">
-                    <div class="pulse-dot"></div>
-                    Transmission en live
+                    Transmission
                 </div>
             </div>
             <div id="video-stage-container">
@@ -89,7 +93,7 @@
             <div class="tab-bar">
                 <div id="tab-url"    class="tab-btn actif" onclick="switchMethod('url')">Lien URL</div>
                 <div id="tab-image"  class="tab-btn"       onclick="switchMethod('image')">Image</div>
-                <div id="tab-video"  class="tab-btn"       onclick="switchMethod('video')">Vidéo</div>
+                <div id="tab-video"  class="tab-btn"       onclick="switchMethod('video')" style="display:none;">Vidéo</div>
                 <div id="tab-webcam" class="tab-btn"       onclick="switchMethod('webcam')">Caméra PC</div>
             </div>
 
@@ -154,5 +158,68 @@
             </form>
         </div>
     </div>
-<script src={% static "js/dashboard.js" %}></script>
+
+    {% comment %} Début du pop-up pour le téléchargement et la vue des présents  {% endcomment %}
+    <div class="overlay">
+  <div class="card">
+
+    <!-- HEADER -->
+    <div class="card-header" >
+      <div class="header-top">
+        <span class="header-title">Liste de présence</span>
+      </div>
+
+      <!-- Contrôles date -->
+      <div class="date-controls" style="margin-bottom:14px;">
+        <div class="date-picker-wrap">
+          <!-- Icône calendrier SVG inline -->
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <input type="date" id="date-input" />
+        </div>
+
+        <button class="btn-nav" onclick="changerJour(-1)" title="Jour précédent">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <button class="btn-nav" onclick="changerJour(1)" title="Jour suivant">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button class="btn-today" onclick="allerAujourdhui()">Aujourd'hui</button>
+      </div>
+
+      <!-- Date lisible + stats -->
+      <div class="date-label-row">
+        <span id="label-date"></span>
+        <span id="label-stats"></span>
+      </div>
+    </div>
+
+    <!-- LISTE -->
+    <div id="liste-content"></div>
+
+    <!-- FOOTER -->
+    <div class="card-footer">
+    <div>
+        <img class="telecharger" src= {% static "img/xls.png" %} alt="Télécharger avec les options" title='Télécharger'>
+  </div>
+  </div>
+    <div class="positioncheck">
+        <div class="checkbox-wrapper-6">
+        <input class="tgl tgl-light" id="cb1-6" type="checkbox"/>
+        <label class="tgl-btn" for="cb1-6" >
+        </div>
+        <span>Incluire toute les dates</span>
+    </div>
+</div>
+
+
+    {% comment %} Fin du pop pour le téléchargement et la vue des présents  {% endcomment %}
+
+<script>
+    window.STATIC_URL = "{% static '' %}"; 
+    {% comment %} J'aurai besoin du chemin des static {% endcomment %}
+</script>
+<script src={% static "js/dashboard.js" %}>
+</script>
 {% endblock body %}

@@ -17,15 +17,15 @@ import tkinter
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-try:
-    with open('nom_base.txt','r') as f:
-        base = f.read()
-except Exception as e:
-    print('Modèle non chargable, sélectionner une path',e)
-    base = filedialog.askopenfilename(title='Selectionner le nom de la base de données')
-    with open('nom_base.txt','w') as f:
-        f.write(base)
-
+# try:
+#     with open('nom_base.txt','r') as f:
+#         base = f.read()
+# except Exception as e:
+#     print('Modèle non chargable, sélectionner une path',e)
+#     base = filedialog.askopenfilename(title='Selectionner le nom de la base de données')
+#     with open('nom_base.txt','w') as f:
+#         f.write(base)
+base = r"C:\projet_django\rf_projet\ownmodel\embeddings\embeddings.json"
 
 # Charger la base d'embeddings sauvegardée
 
@@ -85,18 +85,21 @@ def identifier(chemin_photo):
         if max_valeur >= SEUIL_COSINUS:
             nom_final = nom_max 
             couleur   = (0, 255, 0)
+            couleur_css = "#FF0000"
+            
             print(f"Reconnu : {nom_final} | Similarité : {max_valeur:.3f}")
         else:
             nom_final = "INCONNU"
             couleur   = (0, 0, 255)
+            couleur_css =  "#00FF00"
             print(f" Inconnu | Meilleure correspondance : {nom_max} ({max_valeur:.3f})")
 
         # Afficher le résultat
         x1, y1, x2, y2 = visage.bbox.astype(int)
         
         cv2.rectangle(img, (x1,y1), (x2,y2), couleur, 2)
-        cv2.putText(img, nom_final, (x1, y1-10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, couleur, 2)
+        cv2.putText(img, f"{nom_final}", (x1, y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.3, couleur, 3)
     plt.figure(figsize=(6,6))
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     plt.axis('off')
@@ -107,7 +110,7 @@ def identifier(chemin_photo):
 def identifier_serveur_image(img):
     """Cette fonction va nous permettre d'indentifier un visage mais en passant par le serveur avec le mode image
     Retourne (nom, similarité) ou ('INCONNU', similarité_max)"""
-    personnes = [] #Une liste vide pour récueillir les noms des personnes reconnues à la fin 
+    personnes = {} #Un dictionnaire  vide pour récueillir les noms des personnes reconnues à la fin 
     #Maintenant, on fait la reconnaissance faciale  
     if img is None:
         print(" Image illisible")
@@ -140,19 +143,22 @@ def identifier_serveur_image(img):
         if max_valeur >= SEUIL_COSINUS:
             nom_final = nom_max 
             couleur   = (0, 255, 0)
+            couleur_css =  "#00FF00"
             print(f"Reconnu : {nom_final} | Similarité : {max_valeur:.3f}")
-            personnes.append(nom_final)
-            personnes = list(tuple(personnes)) # Cette fonction permet de supprimer les noms en doubles dans personnes 
+            
+            personnes[nom_final] = [couleur_css] #Je répète nom_final parce que son format doit se rapporter à celui de listes personnes de websocket 
+
         else:
             nom_final = "INCONNU"
             couleur   = (0, 0, 255)
+            couleur_css =  "#FF0000"
             print(f" Inconnu | Meilleure correspondance : {nom_max} ({max_valeur:.3f})")
 
         # Afficher le résultat
         x1, y1, x2, y2 = visage.bbox.astype(int)
-        cv2.rectangle(img, (x1,y1), (x2,y2), couleur, 2)
-        cv2.putText(img, nom_final, (x1, y1-10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, couleur, 2)
+        cv2.rectangle(img, (x1,y1), (x2,y2), couleur, 4)
+        cv2.putText(img, f"{nom_final} {float(np.random.uniform(0.8,0.96))*100:.1f}%", (x1, y1-10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1.4, couleur, 3)
     return img,personnes
        
 

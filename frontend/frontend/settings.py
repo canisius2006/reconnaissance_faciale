@@ -25,21 +25,31 @@ SECRET_KEY = 'django-insecure-lb59h(q642hpc9dces_yvayozcqh^fz6x(tg8m*ly^(on!^01u
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
 
 INSTALLED_APPS = [
     'daphne',
+    'channels',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'liveservor'
+    'liveservor',
 ]
+
+# #Configuration du Q_cluster
+# Q_CLUSTER = {
+#     'name': 'liveservor',
+#     'workers': 2,
+#     'timeout': 60,
+#     'django_redis': None,
+#     'orm': 'default',  # utilise ma base de données
+# }
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -49,6 +59,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    
 ]
 
 ROOT_URLCONF = 'frontend.urls'
@@ -78,6 +89,16 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
+
+# Configuration Redis
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+        # "CONFIG": {
+        #     "hosts": [("127.0.0.1", 6379)],
+        # },
     }
 }
 
@@ -116,13 +137,14 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+
 STATICFILES_DIRS = [
     BASE_DIR/'static'
 ]
-#Configuration des médias 
 # Chemin absolu du dossier où Django stockera les fichiers médias localement
 MEDIA_ROOT = BASE_DIR/'media'
 
+#STATIC_ROOT = BASE_DIR / 'static'  # ← c'est ça qui manque
 # L'URL publique pour accéder à ces fichiers via le navigateur
 MEDIA_URL = '/media/'
