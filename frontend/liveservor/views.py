@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import render,redirect
 from django.http import HttpRequest,HttpResponse,JsonResponse,FileResponse
 import io 
 import numpy as np
@@ -9,8 +9,10 @@ from django.conf import settings
 import datetime 
 from django.utils import timezone
 from django.core.files.base import ContentFile 
-from .models import ImageTraite,Reconnus,ListePresence
+from .models import ImageTraite,Reconnus,Profile,Source
 from .creactionfichier import enregistrer_presence
+from django.core.files.storage import default_storage
+from . import ajouter_une_personne as aj 
 # Create your views here.
 
 
@@ -87,12 +89,12 @@ def telecharger(request):
     if request.method=='GET':
         date = request.GET.get('date')
         if date=='all':
-            liste = Reconnus.objects.all().values('source', 'nom', 'heure', 'date')
+            liste = Reconnus.objects.all().order_by('heure','date').values('source', 'nom', 'heure', 'date')
             
             liste = list(liste)
             nom_fichier = 'Toute_les_listes_de_presences'+'.xlsx'
         else:
-            liste = Reconnus.objects.filter(date=date).values('source','nom','heure','date')
+            liste = Reconnus.objects.filter(date=date).order_by('heure','date').values('source','nom','heure','date')
             liste = list(liste)
             nom_fichier = date.replace(':','_')+'.xlsx'
         for item in liste:
@@ -106,9 +108,37 @@ def telecharger(request):
         wb.save(buffer)
         buffer.seek(0)
         
-        
-        
-        
         buffer.seek(0)
         
         return FileResponse(buffer,as_attachment=True,filename=nom_fichier)
+
+def ajouter(request:HttpRequest)->HttpResponse:
+    """La vue pour pouvoir ajouter de nouveaux visages """
+    if request.method == 'POST':
+        photos = request.FILES.getlist('photos')
+        photo_de_profil = photos[0]
+        nom = request.POST.get('nom')
+        path = f'media/photos/{nom}'
+        for photo in photos:
+            default_storage.save(f'photos/{nom}/{photo.name}',photo)
+            
+        #Après avoir fait ça , nous allons faire de l'ajout dans la base de données 
+        # Ce qui est primordial ici, c'est de pouvoir donner le chemin du dossier de la personne 
+        valeur = aj.ajouter(Path(path))
+        if valeur:
+            #Je vais procéder à l'enregistrememt du nom de la personne dans ma base de données 
+            Profile.objects.create(nom=nom,photo=photo_de_profil).save()
+            return JsonResponse({'message':f'{nom} Ajouté dans la base de données avec succès','status':200})
+
+        else:
+            return JsonResponse({'message':f'{nom} Erreur subvenue','status':405})
+    return render(request,'ajouter.html')
+
+
+def liste_source(request:HttpRequest)->JsonResponse:
+    """Cette fonction nous permet d'enregistrer les sources de l'utilisateur et de s'y connecter quand il revient vers les sources"""
+    liste = Source.objects.values_list('url',flat=True)
+    # liste = Source.objects.all().values('url').exclude(id=None)
+    liste = list(liste)
+    print(liste)
+    return JsonResponse({'liste':liste})

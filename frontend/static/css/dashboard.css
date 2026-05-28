@@ -13,6 +13,18 @@
 
         .hidden { display: none !important; }
 
+        .people_add{
+            height:30px;
+            width:25px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: transform 1s ease, border 1s ease;
+        }
+        .people_add:hover{
+            transform: scale(1.2,1.2);
+            border:1px solid blue;
+        }
+
         /* ============================================================
            HEADER
         ============================================================ */
@@ -68,7 +80,9 @@
         .menu-t:hover{
             background-color: #3b4f6d;
         }
-
+        
+            
+        
         /* ============================================================
            CONTENEUR PRINCIPAL
         ============================================================ */
@@ -196,6 +210,7 @@
         }
 
         .mid-header {
+            position:relative;
             height: 44px;
             display: flex;
             align-items: center;
@@ -205,13 +220,72 @@
             flex-shrink: 0;
             background: #0b0f1a;
         }
+       
 
-        .mid-header-quality {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-            color: #94a3b8;
+        .mid-header-stop {
+            
+            font-size: 10px;
+            object-fit: contain;
+            text-align: center;
+            align-content: center;
+            text-wrap: wrap;
+            display:none;
+            width:10%;
+            height:38px;
+            object-fit: contain;
+            background: rgb(208, 11, 11);
+            color:white;
+            border:1px ridge rgba(233, 9, 9, 0.589);
+            border-radius: 10px;
+            cursor: pointer;
+            margin-right:10px;
+        }
+    
+        
+        .mid-header-left{
+            display:flex;
+            flex-grow: 1;
+            width:100%;
+            flex-direction:row;
+        }
+        .mid-header-left-text{
+            display: none;
+            width:80%;
+            height:38px;
+            background: linear-gradient(135deg ,black,#0e1847,rgb(18, 18, 62),black);
+            color:white;
+            border:1px ridge rgba(255, 255, 255, 0.536);
+            border-radius: 10px;
+            text-align: center;
+            font-size: larger;
+            
+        }
+        .mid-header-left-file{
+            display:none;
+            width:10%;
+            height:38px;
+            object-fit: contain;
+            background: black;
+            color:white;
+            border:1px ridge rgba(255, 255, 255, 0.536);
+            border-radius: 10px;
+            cursor: pointer;
+            margin-right:10px;
+        }
+        .illusion{
+            width:100%;
+            height:38px;
+            background: linear-gradient(135deg ,black,#0e1847,rgb(18, 18, 62),black);
+            border:1px ridge rgba(255, 255, 255, 0.536);
+            border-radius: 10px;
+            text-align: center; 
+            object-fit: contain;
+            cursor:pointer;
+            opacity: 0.5;
+            transition: opacity 0.5s ease-in;
+        }
+        .illusion:hover{
+            opacity: 1;
         }
 
         .pulse-dot {
@@ -1311,4 +1385,8 @@
     align-content: center;
     gap:10px;
     padding-bottom: 10px;
+  }
+
+  .actif{
+    border:8px solid green;
   }

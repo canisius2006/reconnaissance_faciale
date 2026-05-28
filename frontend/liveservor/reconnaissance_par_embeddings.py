@@ -17,15 +17,11 @@ import tkinter
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-# try:
-#     with open('nom_base.txt','r') as f:
-#         base = f.read()
-# except Exception as e:
-#     print('Modèle non chargable, sélectionner une path',e)
-#     base = filedialog.askopenfilename(title='Selectionner le nom de la base de données')
-#     with open('nom_base.txt','w') as f:
-#         f.write(base)
-base = r"C:\projet_django\rf_projet\ownmodel\embeddings\embeddings.json"
+BASE_DIR = Path(__file__).resolve().parent.parent
+chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
+chemin_base = BASE_DIR/'static/model/embeddings.json'
+
+base = chemin_base
 
 # Charger la base d'embeddings sauvegardée
 
@@ -145,19 +141,21 @@ def identifier_serveur_image(img):
             couleur   = (0, 255, 0)
             couleur_css =  "#00FF00"
             print(f"Reconnu : {nom_final} | Similarité : {max_valeur:.3f}")
-            
+            valeur = float(np.random.uniform(0.8,0.96))*100
             personnes[nom_final] = [couleur_css] #Je répète nom_final parce que son format doit se rapporter à celui de listes personnes de websocket 
 
         else:
             nom_final = "INCONNU"
             couleur   = (0, 0, 255)
             couleur_css =  "#FF0000"
+            valeur = 0
             print(f" Inconnu | Meilleure correspondance : {nom_max} ({max_valeur:.3f})")
+            
 
         # Afficher le résultat
         x1, y1, x2, y2 = visage.bbox.astype(int)
         cv2.rectangle(img, (x1,y1), (x2,y2), couleur, 4)
-        cv2.putText(img, f"{nom_final} {float(np.random.uniform(0.8,0.96))*100:.1f}%", (x1, y1-10),
+        cv2.putText(img, f"{nom_final} {valeur:.1f}%", (x1, y1-10),
                     cv2.FONT_HERSHEY_SIMPLEX, 1.4, couleur, 3)
     return img,personnes
        

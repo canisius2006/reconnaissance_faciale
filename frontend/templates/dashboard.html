@@ -6,6 +6,7 @@
 
 {% endblock head %}
 {% block body %}
+    
     <!-- ===== HEADER ===== -->
     <div id="app-header">
         <div class="header-left">
@@ -13,8 +14,8 @@
             <span class="header-title">Tableau de <span class="header_title_side">Bord</span></span>
         </div>
         <div class='menu'>
-            <span >Menu</span>
-            <span class="menu-t">☰</span>
+            <img class='people_add' src={% static "img/ajouter_people.png" %} alt='Ajouter une personne' title="Ajouter une personne à la base de données">
+            <span class="menu-t">Liste de Présence ☰</span>
         </div>
     </div>
 
@@ -46,10 +47,14 @@
         <!-- ===== PANEL MILIEU ===== -->
         <section id="mid-panel">
             <div class="mid-header">
-                <div class="mid-header-left"></div>
-                <div class="mid-header-quality">
-                    Transmission
+                <div title='Mode tracking' class="mid-header-left"><img class='illusion' src={% static "img/rechercher.png" %} alt=""><input class="mid-header-left-text" name="research" type="text" placeholder="Entrer le nom de la personne que vous recherchez"> <input name='research-photo' style="display:none;" type="file" >
+                <img src={% static "img/televerser.png" %} class="mid-header-left-file" title="Téléverser une photo">
+                <div class="mid-header-stop">
+                    Stop Traking
                 </div>
+            </div>
+               
+                
             </div>
             <div id="video-stage-container">
                 <div id="main-video-area"><!-- Géré en JS --></div>

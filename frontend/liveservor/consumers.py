@@ -39,8 +39,9 @@ import insightface
 import matplotlib.pyplot as plt
 
 from channels.generic.websocket import AsyncWebsocketConsumer
-from .models import Reconnus 
+from .models import Reconnus,Source
 from asgiref.sync import sync_to_async 
+from django.utils import timezone
 
 
 # =============================================================
@@ -49,15 +50,9 @@ from asgiref.sync import sync_to_async
 BASE_DIR = Path(__file__).resolve().parent.parent
 #print(BASE_DIR)
 
-_embeddings_path = r"C:\projet_django\rf_projet\ownmodel\embeddings\embeddings.json"
+chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
+chemin_base = BASE_DIR/'static/model/embeddings.json'
 
-with open(_embeddings_path, 'r') as f:
-    base_json = json.load(f)
-
-liste_nom       = np.array(list(base_json.keys()))
-liste_embedding = np.array(list(base_json.values()))
-
-BASE_EMBEDDINGS = {nom: np.array(emb) for nom, emb in base_json.items()}
 
 # ── InsightFace ────────────────────────────────────────────────────────────────
 app_rec = FaceAnalysis(
@@ -235,7 +230,7 @@ cv2.setUseOptimized(True)
 cv2.setNumThreads(4)
 
 detector = cv2.FaceDetectorYN.create(
-    model=r"C:\projet_django\rf_projet\ownmodel\face_detection_yunet_2023mar.onnx",
+    model=chemin_modele,
     config="",
     input_size=(FRAME_W, FRAME_H),
     score_threshold=SCORE_THRESHOLD,
@@ -265,11 +260,24 @@ class Utilitaire():
         self.en_cours      = set()
         self.en_cours_lock = threading.Lock()
         
+        #Les variables pour le rechargement de l'embeddings 
+        self.cache = None
+        self.last_modified = 0
+        
+        self.liste_nom = [] 
+        self.liste_embedding = []
+        
     def id_color(self,tid):
         np.random.seed(tid * 7 + 13)
         return tuple(int(c) for c in np.random.randint(100, 255, 3))
 
-
+    def charger_embeddings(self,chemin):
+        self.mtime = os.path.getmtime(chemin)
+        if self.cache is None or self.mtime > _last_modified:
+            with open(chemin, 'r') as f:
+                _cache = json.load(f)
+            _last_modified = self.mtime
+        return _cache
 
     def resoudre_id(self,tid):
         """Retourne l'id canonique associé à tid (suit la chaîne de redirections)."""
@@ -290,6 +298,9 @@ class Utilitaire():
         - Si c'est une re-vérification d'un INCONNU -> met à jour l'embedding
         et relance l'identification.
         """
+        self.base_json = self.charger_embeddings(chemin_base)
+        self.liste_nom = np.array(list(self.base_json.keys()))
+        self.liste_embedding = np.array(list(self.base_json.values()))
         try:
             visages = app_rec.get(img)
             if not visages:
@@ -350,9 +361,9 @@ class Utilitaire():
         if emb is None:
             return
 
-        sims          = np.dot(liste_embedding, emb)
+        sims          = np.dot(self.liste_embedding, emb)
         max_val       = float(np.max(sims))
-        nom_max       = liste_nom[int(np.argmax(sims))]
+        nom_max       = self.liste_nom[int(np.argmax(sims))]
         nom_final     = nom_max if max_val >= SEUIL_COSINUS else "INCONNU"
         pour_debugger = nom_max
         pourcentage   = max_val * 100
@@ -406,6 +417,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
+            if len(data)==0:
+                return
             print(data, "C'est ce que le navigateur envoie")
         except json.JSONDecodeError as e:
             print(f'Erreur de parsing JSON : {e}')
@@ -420,17 +433,14 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                     self.source = int(self.source)
                 else:
                     await asyncio.sleep(2)
+                    a,b = await Source.objects.aget_or_create(url=self.source)#Je vais enregistrer les liens des urls
+                    print(b)
                 self.streaming = True
+                
                 asyncio.sleep(1)
                 asyncio.create_task(self.live_serveur(self.source))
-        
-        elif message_type =='webcam':
-            self.source    = int(data['message'])
-            await asyncio.sleep(2)
-            self.streaming = True
-            asyncio.create_task(self.live_serveur(self.source))
-            
-          
+                    
+
     async def live_serveur(self, source):
         """Cette fonction va gérer le mode live côté serveur"""
         self.util = Utilitaire() #Créaction de la classe de nos besoins 
@@ -471,7 +481,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 self.ret, frame = await loop.run_in_executor(None, self.util._lire_frame_recente, cap)
                 
                 if not self.ret  :
-                    if self.nombre_essai <10:
+                    if self.nombre_essai <5:
                         self.nombre_essai+=1
                         data = {'type': 'stoperror'}
                         await self.send(json.dumps(data))
@@ -482,6 +492,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                         self.ret,taille_setting = await loop.run_in_executor(None,cap.retrieve)
                         print("Je suis entrain de réessayer actuellement ") 
                         #Donc j'attends un moment avant de commencer par faire quelque chose , et je relance pour voir si c'est disponible
+                    elif not self.streaming:
+                        self.close()
                     else:
                         data = {'type': 'fin'}
                         await self.send(json.dumps(data))
@@ -572,12 +584,12 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                                 label = f" ..."
                             else:
                                 label = f" {nom} {round(np.random.uniform(0.8,0.98)*100,2)}%"
-                                color_css = '#{:02x}{:02x}{:02x}'.format(int(color[0]), int(color[1]), int(color[2]))
+                                color_css = '#{:02x}{:02x}{:02x}'.format(int(color[2]), int(color[1]), int(color[0]))
                                 base_personnes[nom] = [color_css]
                                 
                                 if nom not in self.liste_personne_reconnues:
                                     self.liste_personne_reconnues.add(nom)
-                                    value = await Reconnus.objects.filter(nom=nom).aexists()
+                                    value = await Reconnus.objects.filter(nom=nom,date=timezone.now().date()).aexists()
                                     if not value:
                                         await sync_to_async(Reconnus.objects.create)(source=self.framename,nom=nom)
                                         #Pour pouvoir avoir ma liste sans doublon
@@ -609,8 +621,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 await self.send(json.dumps(data))
                 
             except Exception as e:
-                if not self.ret  :
-                    if self.nombre_essai <10:
+                if not self.ret and self.streaming :
+                    if self.nombre_essai <5 :
                         self.nombre_essai+=1
                         data = {'type': 'stoperror'}
                         await self.send(json.dumps(data))
@@ -621,6 +633,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                         self.ret,taille_setting = await loop.run_in_executor(None,cap.retrieve)
                         print("Je suis entrain de réessayer actuellement ") 
                         #Donc j'attends un moment avant de commencer par faire quelque chose , et je relance pour voir si c'est disponible
+                    elif not self.streaming:
+                        self.close()
                     else:
                         data = {'type': 'fin'}
                         self.close(4000,'On a déjà essayé la reconnexion plusieurs fois')

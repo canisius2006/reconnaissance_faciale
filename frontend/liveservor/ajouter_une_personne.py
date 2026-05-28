@@ -14,10 +14,11 @@
 import numpy as np
 import cv2, os, json
 from insightface.app import FaceAnalysis
-import tkinter as tk
 from tkinter import filedialog
 from pathlib import Path 
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+chemin_base = BASE_DIR/'static/model/embeddings.json'
 
 # buffalo_l = grand modèle, plus précis que buffalo_sc
 # À utiliser ici car on fait ça une seule fois (pas en temps réel)
@@ -48,20 +49,10 @@ def get_embedding(chemin_photo):
     return visages[0].normed_embedding  # shape : (512,)
 
 
-# Ouverture du modèle de reconnaissance json
-try:
-    with open('nom_model.txt', 'r') as f:
-        modele = f.read().strip()
-except Exception as e:
-    print('Modèle non chargable, sélectionner une path', e)
-    modele = filedialog.askopenfilename(title='Selectionner le nom du model')
-    with open('nom_model.txt', 'w') as f:
-        f.write(modele)
-
 
 
 #Charger le modèle d'abord 
-with open(modele,'r') as f:
+with open(chemin_base,'r') as f:
     base_json = json.load(f)
 
 # ─────────────────────────────────────────────────────────────
@@ -95,15 +86,17 @@ def construire_base(dossier_propre:Path):
     return dossier_propre.name, emb_moyen
 
 #Charger et mettre à jour la base de données 
-root = tk.Tk()
-root.withdraw()
-path = Path(filedialog.askdirectory())
-root.destroy()
-resultat = construire_base(path)
-base_json[resultat[0]] = resultat[1].tolist() #De array en liste
 
-# Sauvegarder : 
-with open(modele, 'w') as f:
-    json.dump(base_json, f)
+def ajouter(chemin):
+    """Cette fonction est en quelque sorte le main qui va nous permettre d'ajouter le chemin du fichier """
 
-print(f"\n Base de {len(base_json)} personnes sauvegardée")
+    resultat = construire_base(chemin)
+
+    base_json[resultat[0]] = resultat[1].tolist() #De array en liste
+
+    # Sauvegarder : 
+    with open(chemin_base, 'w') as f:
+        json.dump(base_json, f)
+
+    print(f"\n Base de {len(base_json)} personnes sauvegardée")
+    return True 

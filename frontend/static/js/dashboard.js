@@ -20,6 +20,9 @@
     let base_url = window.STATIC_URL // Chemin d'accès aux fichiers statiques 
 
     let incrementation = 1
+
+    let traking = false ; // Cette variable va nous permettre de savoir si le mode traking est lancé ou pas 
+
     // ============================================================
     //  FONCTIONS GLOBALES D'AJOUT
     //  → À appeler depuis n'importe où pour enrichir les panels
@@ -48,8 +51,8 @@ function connectStream(framename,lien) {
 
     liendatabase[framename]=lien // Enregistrement dans la base de données des liens des images 
 
-    console.log(`Voici le lien ${chemin}`)
   }
+  
 
   ws.onmessage = (e) => {
     data = JSON.parse(e.data)
@@ -65,7 +68,7 @@ function connectStream(framename,lien) {
 
     else if(data.type==='fin'){
         supprimermembrewithname(framename) // Pour fermer l'onglet ou la frame de la camera quand les dix essaies de tentative de reconnexion sont épuisés 
-
+        donnees[framename].liste = []
         ws.close(4001,'erreur de fin')
     }
 
@@ -74,6 +77,7 @@ function connectStream(framename,lien) {
       const base_personnes = data.liste  // Ici, nous avons plutôt la base des id comme keys et en valeur une liste de la couleur et aussi du nom de la personne 
       if (listeframename.includes(framename)){
             donnees[framename].src=src 
+             
             // Trouver l'img correspondante à ce framename et la mettre à jour
             const imgs = document.querySelectorAll(`img.${framename}`)
             for (img of imgs){
@@ -89,12 +93,13 @@ function connectStream(framename,lien) {
     }
       else{
         ws.close(4000,"La frame n'existe plus ")
+        donnees[framename].liste = []
         try{
             listeframename.filter(m =>m!==framename)
             
         }
         catch(e){
-            console.log("Surement la liste a déjà été supprimée")
+        
         }
       }
     }
@@ -105,6 +110,7 @@ function connectStream(framename,lien) {
    // ON met un photo à l'écran pour dire que le flux s'est coupé 
     donnees[framename].src = `${base_url}img/flux_stop.png`
     // Trouver l'img correspondante à ce framename et la mettre à jour
+    donnees[framename].liste = []
     const imgs = document.querySelectorAll(`img.${framename}`)
     for (img of imgs){
     if (img) img.src = donnees[framename].src
@@ -115,6 +121,28 @@ function connectStream(framename,lien) {
   ws.onerror = (err) => console.error(`Cam ${framename} erreur:`, err);
 }
 
+document.querySelector('.people_add').addEventListener('click',()=>{
+    window.location.pathname='ajouter/'
+})
+
+
+    async function geturllist(){ // Cette function permet d'avoir la liste des urls
+    try{
+    const response = await fetch('listesource/',{method:'GET',headers:{
+        'Content-Type':'application/json',
+        'X-CSRFToken':csrfToken
+    }})
+    const data= await response.json()
+    //console.log(data)
+    const liste = data.liste || []
+    //console.log(liste)
+    return liste
+    }
+    
+    catch(e){
+        
+    }
+  }
 
 
     /**
@@ -698,11 +726,11 @@ function AjouterPanelDroit() {
     }
 
     // ============================================================
-    //  ENVOI SERVEUR (Django) — optionnel, ne bloque pas l'UI
+    //  ENVOI SERVEUR (Django) — ne bloque pas l'UI
     // ============================================================
+    let csrfInput = document.getElementsByName("csrfmiddlewaretoken")[0];
+    let csrfToken = csrfInput ? csrfInput.value : '';
     async function _envoyerServeur() {
-        const csrfInput = document.getElementsByName("csrfmiddlewaretoken")[0];
-        const csrfToken = csrfInput ? csrfInput.value : '';
         const feedback = document.getElementById('feedback-info');
         feedback.innerText=""
         try {
@@ -724,7 +752,8 @@ function AjouterPanelDroit() {
 
                         // Attendre que la première frame arrive
                         const attendre = setInterval(() => {
-                            if (donnees[cam] && donnees[cam].src) {   
+                            if (donnees[cam] && donnees[cam].src) { 
+                                 
                                 clearInterval(attendre)
                                 ajouterMembre({ framename: cam, source: 'url', lien: donnees[cam].src })
                             }
@@ -760,7 +789,6 @@ function AjouterPanelDroit() {
             
             const reponse = await data.json();
 
-            console.log(reponse)
             // La réponse est sous cette forme
             // return JsonResponse({'name':name,'url':chemin,'source':source,'liste':liste_personnes})
             listeframename.push(reponse.name)
@@ -768,15 +796,15 @@ function AjouterPanelDroit() {
             donnees[reponse.name].liste = reponse.liste 
             donnees[reponse.name].src=reponse.url
 
-            console.log(reponse.name) 
+           
 
             ajouterMembre({ framename: reponse.name, source:reponse.source, lien:reponse.url })
 
             console.log('[Serveur]', reponse);
             }
         } catch(e) {
-            console.warn('[Serveur] Envoi échoué (mode standalone ?)', e);
-            alert("Erreur rencontré lors de la requête")
+            // console.log('[Serveur] Envoi échoué (mode standalone ?)', e);
+            // alert("Erreur rencontré lors de la requête")
         }
         finally{
             bouton.classList.remove('loader')
@@ -826,6 +854,8 @@ function AjouterPanelDroit() {
         
     });
 
+
+
 function sanitizeName(name) {
   // 1. .trim() enlève les espaces inutiles au début et à la fin
   // 2. .replace() utilise une Regex pour ne garder que les caractères autorisés
@@ -834,6 +864,7 @@ function sanitizeName(name) {
   // -' : tirets et apostrophes
   
   return name
+  .normalize("NFD")
     .trim()
     .replace(/[^\p{L}\s\-'\d_]/gu, '') // Remplace tout ce qui n'est pas autorisé par rien
     .replace(' ',''); // Remplace l'espace par rien
@@ -861,7 +892,7 @@ async function checkLink(url) {
         const imgs = document.querySelectorAll(`img.Source_${incrementation}`)
         if (document.querySelectorAll('img').length===0) {incrementation=1} 
         else if (imgs.length>0){incrementation = incrementation+1}
-        else{incrementation=1}
+        
         return 'Source_'+incrementation
     }
 
@@ -872,7 +903,7 @@ async function checkLink(url) {
 const input       = document.getElementById('date-input');
 const labelDate   = document.getElementById('label-date');
 const labelStats  = document.getElementById('label-stats');
-const listeContent = document.getElementById('liste-content');
+let listeContent = document.getElementById('liste-content');
 
 const jours = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
 const mois  = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
@@ -902,7 +933,7 @@ function allerAujourdhui() {
 
 function mettreAJour() {
   const d = new Date(input.value + 'T00:00:00');
-  labelDate.textContent = formatDate(d);
+  labelDate.textContent = `${!document.getElementById('cb1-6').checked ? formatDate(d):"Toutes les dates"}`;
   labelStats.textContent = '';
 
   listeContent.innerHTML = `
@@ -922,7 +953,6 @@ function mettreAJour() {
 let dataactuelle 
 function chargerPresence(dateStr) {
     dataactuelle = dateStr
-    console.log(dateStr);
   fetch(`presence/?date=${dateStr}`, {
     headers: { 'X-Requested-With': 'XMLHttpRequest' }
   })
@@ -930,12 +960,12 @@ function chargerPresence(dateStr) {
   .then(data => afficherPresence(data))
   .catch(() => afficherErreur());
 }
-
+let personnes
 function afficherPresence(data) {
-  const personnes = data.personnes || [];
+  personnes = data.personnes || [];
   const presents  = personnes.filter(p => p.present).length;
 
-  labelStats.textContent = `${presents} / ${personnes.length} présent${presents > 1 ? 's' : ''}`;
+  labelStats.textContent = `${personnes.length} Personnes`
 
   if (personnes.length === 0) {
     listeContent.innerHTML = `
@@ -955,13 +985,36 @@ function afficherPresence(data) {
     const source       = p.source;
     const heure     = p.heure ? `<span class="heure">${p.heure}</span>` : '';
     return `
-      <div class="row" title=${p.date}>
+      <div class="row" title=${!document.getElementById('cb1-6').checked ? p.date:"Toutes les dates"}>
         <div class="avatar present">${initiales}</div>
         <div class="row-info">
           <div class="row-nom">${p.nom}</div>
         </div>
         <div class="row-right">
           ${heure}
+          ${ document.getElementById('cb1-6').checked ? `<span class='badge' style='color:blue' >${p.date}</span>`:''}
+          <span class="badge ">${source}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function intervalajouter(){
+    // Cette fonction permet d'ajouter les gens sans recharger la page 
+    listeContent.innerHTML = personnes.map(p => {
+    const initiales = p.nom.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
+    const source       = p.source;
+    const heure     = p.heure ? `<span class="heure">${p.heure}</span>` : '';
+    return `
+      <div class="row" title=${!document.getElementById('cb1-6').checked ? p.date:"Toutes les dates"}>
+        <div class="avatar present">${initiales}</div>
+        <div class="row-info">
+          <div class="row-nom">${p.nom}</div>
+        </div>
+        <div class="row-right">
+          ${heure}
+          ${ document.getElementById('cb1-6').checked ? `<span class='badge' style='color:blue' >${p.date}</span>`:''}
           <span class="badge ">${source}</span>
         </div>
       </div>
@@ -981,13 +1034,21 @@ function afficherErreur() {
     </div>
   `;
 }
+
+document.querySelector('.date-picker-wrap').addEventListener('click',()=>{
+    const a = document.querySelector('#date-input')
+    a.showPicker()
+})
+
 // Fonction du bouton retour 
 document.querySelector('.retour').addEventListener('click',()=>{window.location.pathname=''})
 
-// Afficher le menu 
+// Afficher le menu
+let encours 
 document.querySelector('.menu-t').addEventListener('click',()=>{
     document.querySelector('.overlay').style.display='flex'
     mettreAJour()
+    encours = setInterval(intervalajouter,800)
 })
  document.getElementById('cb1-6').addEventListener('change',()=>{
     mettreAJour()
@@ -996,6 +1057,8 @@ document.querySelector('.menu-t').addEventListener('click',()=>{
 document.querySelector('.overlay').addEventListener('click',(e)=>{
     if (e.target==document.querySelector('.overlay')){
         document.querySelector('.overlay').style.display='none';
+        document.getElementById('cb1-6').checked = false
+        clearInterval(encours)
     }
 })
 
@@ -1009,13 +1072,159 @@ input.addEventListener('change', mettreAJour);
 input.value = dateToStr(new Date());
 // mettreAJour();
 
+// Ici, nous allons faire notre fonction pour pouvoir ouvrire les sources et  la caméra en même temps que l'on vient sur la page 
 
+function ouvrirsourcefirst(framename,url){
+    
+    listeframename.push(framename)
+    
+    // Ici, j'établis la connexion 
+    connectStream(framename,url)
+
+    // Attendre que la première frame arrive et aussi on va considérer que la caméra est un lien, parce que ça proviendra du serveur, le lien d'analyse 
+    const attendre = setInterval(() => {
+        if (donnees[framename] && donnees[framename].src) {   
+            clearInterval(attendre)
+            ajouterMembre({ framename: framename, source: 'url', lien: donnees[framename].src })
+        }
+    }, 200)
+}
+
+
+// async function connexionautomatique(){
+//     // Cette fonction me permet de faire le fecth, ensuite la connexion automatique aux urls déjà enregistré
+
+//     const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+//     try{
+//         const urlgetter = await geturllist()||[]
+//         const listeurl = Object.values(liendatabase)
+//     if(urlgetter.length===0) return ; // S'il n'y a pas de liste, alors on continue notre chemin 
+//     for (const url of urlgetter){ 
+//         const checker = await checkLink(url)
+//         if(!checker) continue; // Dans ce cas, on ne fait plus l'ouverture , on saute en même temps l'étape 
+//         if (listeurl.includes(url)) continue  // Si l'url est déjà enregistré parmi ceux déjà checké, alors on passe notre chemin
+//         ouvrirsourcefirst(incrementer(),url)
+        
+//         await pause(2000) // Attends 2s d'abord
+//     }
+//     }
+//     catch(e){
+//         console.log(e)
+//     }
+
+// }
+
+
+
+let _connexionEnCours = false; // verrou
+
+async function connexionautomatique() {
+    if (_connexionEnCours) return; // déjà en train de tourner → on ignore
+    _connexionEnCours = true;
+
+    const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    try {
+        const listeurl = Object.values(liendatabase)
+        const urlgetter = await geturllist() || [];
+        if (urlgetter.length === 0) return;
+
+        for (const url of urlgetter) {
+            if (listeurl.includes(url)) continue;
+
+            const checker = await checkLink(url);
+            if (!checker) continue;
+
+            ouvrirsourcefirst(incrementer(), url);
+            listeurl.push(url);
+            await pause(5000);
+        }
+    } catch (e) {
+        
+    } finally {
+        _connexionEnCours = false; // libère le verrou dans tous les cas
+    }
+    
+}
+
+
+function connexionlimite(){
+    const trylimit = setInterval(connexionautomatique,3000)
+    setTimeout(()=>{
+        clearInterval(trylimit),console.log('Les 30s sont terminés')
+    },30000)
+}
+
+
+
+// Ici, les fonctions pour la méthode rechercher 
+const namerechercher = document.querySelector('.mid-header-left-text')
+const filerechercher = document.querySelector('.mid-header-left-file')
+const illusion = document.querySelector('.illusion')
+const stoptraking = document.querySelector('.mid-header-stop')
+const conteneur = document.querySelector('#video-stage-container')
+let trakingnumber
+illusion.addEventListener('click',()=>{
+    illusion.style.display='none'
+    namerechercher.style.display='block'
+    filerechercher.style.display='block'
+    stoptraking.style.display = 'block'
+    traking = true 
+    trakingnumber = setInterval(()=>{
+        rechercher_par_nom(namerechercher.value)
+    },500)
+})
+
+stoptraking.addEventListener('click',()=>{
+    traking = false 
+    clearInterval(trakingnumber)
+    illusion.style.display = 'block'
+    namerechercher.style.display='none'
+    filerechercher.style.display='none'
+    stoptraking.style.display = 'none'
+    document.querySelectorAll('img').forEach(m=>{m.classList.remove('actif')})
+    namerechercher.value=''
+})
+
+// Donnees  = {framename:{src:lien,liste:{'canisius',couleur}}}
+function rechercher_par_nom(nom){
+    // Cette fonction va nous permettre de rechercher une personne en utilisant son nom 
+    nom = nom.toLowerCase().trim()
+    const frametrouve = []
+    if(!donnees) return 
+    for (let [key,value] of Object.entries(donnees)){
+        // On met les borders initiaux en enlevant la mauvaise classe 
+        document.querySelectorAll(`img.${key}`).forEach(img=>img.classList.remove('actif'))
+        document.querySelectorAll(`img.${key}`).forEach(img=>img.classList.remove('actif'))
+
+        const newliste = Object.keys(value.liste).filter(e=>e.toLowerCase()===nom)
+        
+        if(newliste.length===0) continue
+        frametrouve.push(key)   
+
+    }
+     
+
+    frametrouve.forEach(nom=>{
+        
+        document.querySelectorAll(`img.${nom}`).forEach(img=>img.classList.add('actif'))
+        document.querySelectorAll(`video.${nom}`).forEach(img=>img.classList.add('actif'))
+    })
+
+    }
+
+function arretertraking(){
+
+}
 
     // ============================================================
     //  INIT
     // ============================================================
     window.addEventListener('load', () => {
+        // J'arrête la caméra au niveau de chrome d'abord 
+        stopWebcam();
         _rafraichirPanelMilieu();
         _rafraichirPanelGauche();
         AjouterPanelDroit()
+        setTimeout(()=>{ouvrirsourcefirst(incrementer(),'0')},500) // Cette fonction permet d'ouvrir la caméra d'abord
+        connexionlimite()
     });

@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %} Ajouter {% endblock title %}
+{% block head %}
+<link rel='stylesheet' href={% static "css/ajouter.css" %}>
+
+{% endblock head %}
+{% block body %}
+
+<header>
+  <div class="logo">RF</div>
+  <div>
+    <h1>Ajouter une nouvelle Personne</h1>
+  </div>
+</header>
+
+<div class="progress-wrap">
+  <div class="progress-label">
+    <span>PROGRESSION</span>
+    <span id="progressText">0 / 5 photos</span>
+  </div>
+  <div class="progress-dots" id="progressDots">
+    <div class="dot" id="dot0"></div>
+    <div class="dot" id="dot1"></div>
+    <div class="dot" id="dot2"></div>
+    <div class="dot" id="dot3"></div>
+    <div class="dot" id="dot4"></div>
+  </div>
+</div>
+
+<div class="source-panel">
+  <h2>Source d'image</h2>
+  <div class="source-tabs">
+    <button class="src-btn active" data-src="camera" onclick="selectSource('camera')">
+      ><span>Caméra</span>
+    </button>
+    <button class="src-btn" data-src="droidcam" onclick="selectSource('droidcam')">
+      ><span>DroidCam</span>
+    </button>
+    <button class="src-btn" data-src="file" onclick="selectSource('file')">
+      ><span>Fichier</span>
+    </button>
+  </div>
+
+  <div class="droidcam-config hidden" id="droidcamConfig">
+    <div class="field">
+      <label>IP de l'appareil</label>
+      <input type="text" id="dcIp" placeholder="ex: 192.168.1.42" />
+    </div>
+    <div class="field" style="max-width:90px">
+      <label>Port</label>
+      <input type="text" id="dcPort" placeholder="4747" value="4747" />
+    </div>
+    <button class="btn-connect" onclick="connectDroidCam()">Connecter</button>
+  </div>
+
+  <div class="alert" id="droidAlert"></div>
+
+  <div class="hidden" id="droidTips">
+    <ul class="retry-tips">
+      <li>L'application DroidCam doit être ouverte sur le téléphone</li>
+      <li>PC et téléphone sur le même réseau Wi-Fi</li>
+      <li>L'IP affichée dans l'app DroidCam doit correspondre</li>
+      <li>Désactiver temporairement le pare-feu si besoin</li>
+      <li>Port par défaut : 4747 (HTTP) — essayez aussi 4748</li>
+    </ul>
+  </div>
+</div>
+<div class='warning'>
+    <span>⚠️ Attention : Assurez-vous d'être seul sur la photo avant de faire les captures</span>
+</div>
+<!-- ── MAIN 2-COL LAYOUT ── -->
+<div class="main-layout">
+
+  <!-- LEFT: capture area -->
+  <div class="capture-area">
+    <div class="video-container" id="videoContainer">
+      <video id="videoEl" autoplay playsinline muted></video>
+      <!-- FIX: DroidCam MJPEG → <img> tag -->
+      <img id="droidcamImg" alt="DroidCam stream" />
+      <img id="imgPreviewEl" alt="Aperçu" />
+      <div class="placeholder-msg" id="placeholderMsg">
+        <span class="big">S</span>
+        électionnez une source<br>pour commencer
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn-capture" id="captureBtn" onclick="capturePhoto()" disabled>
+        <span id="captureBtnText">Capturer</span>
+      </button>
+      <label class="file-upload-btn hidden" id="fileLabel">
+        <input type="file" id="fileInput" accept="image/*" multiple onchange="handleFileSelect(event)">
+         Choisir image(s)
+      </label>
+    </div>
+  </div>
+
+  <!-- RIGHT: gallery sidebar -->
+  <div class="gallery-sidebar">
+    <div class="gallery-header">
+      <h2>
+        <span class="status-indicator" id="galleryStatus"></span>
+        Photos
+      </h2>
+      <button class="btn-clear" onclick="clearAll()">Effacer tout</button>
+    </div>
+    <div class="gallery-grid" id="galleryGrid">
+      <div class="thumb-slot" id="slot0"><span class="thumb-num">01</span></div>
+      <div class="thumb-slot" id="slot1"><span class="thumb-num">02</span></div>
+      <div class="thumb-slot" id="slot2"><span class="thumb-num">03</span></div>
+      <div class="thumb-slot" id="slot3"><span class="thumb-num">04</span></div>
+      <div class="thumb-slot" id="slot4"><span class="thumb-num">05</span></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="send-panel">
+  <h2>Envoi au serveur Django</h2>
+  {% csrf_token %}
+  <div class="send-row">
+    <input type="text" id="people-name" placeholder="Entrez votre nom">
+    <input type="text" id="serverUrl" placeholder="http://localhost:8000/api/photos/upload/"
+           value=""  style='display:none;'/>
+    <button class="btn-send" id="sendBtn" onclick="sendPhotos()" disabled>Envoyer </button>
+  </div>
+  <div class="send-status" id="sendStatus"></div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" onclick="closeLightboxOverlay(event)">
+  <div class="lb-inner">
+    <button class="lb-close" onclick="closeLightbox()">✕</button>
+    <img id="lbImg" src="" alt="">
+    <div class="lb-label" id="lbLabel"></div>
+  </div>
+</div>
+
+
+
+<script src={% static "js/ajouter.js" %}></script>
+{% endblock body %}
+
+
+
