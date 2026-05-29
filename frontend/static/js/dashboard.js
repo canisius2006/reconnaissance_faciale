@@ -1262,8 +1262,13 @@ function rechercher_par_nom(noms) {
 
 
 
-// Maintenant, nous allons commen
+// Maintenant, nous allons commencer par faire le tracking avec mode image 
 
+const input_image_track = document.getElementsByName('research-photo')[0]
+const declencheur = document.querySelector('.mid-header-left-file')
+declencheur.addEventListener('click',()=>{
+    input_image_track.click()
+})
 
 
 /* =====================================

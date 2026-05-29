@@ -252,6 +252,7 @@ class Utilitaire():
         self.tracker     = SORTTracker()
         self.frame_count = 0
         self.live_dictionnaire = {}
+        
         self.dict_lock         = threading.Lock()
 
         self.id_map      = {}
@@ -348,6 +349,12 @@ class Utilitaire():
                 self.en_cours.discard(tid)
 
 
+    def reconnaitre_inconnu(photo):
+        """Cette fonction va me permettre de reconnaitre même les inconnus sur une caméra"""
+        
+        
+        
+    
     def identifier(self,id_n):
         """
         Identifie le visage via similarité cosinus sur la base de référence.
@@ -441,6 +448,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 asyncio.create_task(self.live_serveur(self.source))
                     
 
+    
     async def live_serveur(self, source):
         """Cette fonction va gérer le mode live côté serveur"""
         self.util = Utilitaire() #Créaction de la classe de nos besoins 

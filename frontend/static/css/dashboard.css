@@ -15,10 +15,12 @@
 
         .people_add{
             height:30px;
-            width:25px;
+            width:30px;
             border-radius: 5px;
             cursor: pointer;
             transition: transform 1s ease, border 1s ease;
+            margin-right:20px;
+            margin-top: 5px;
         }
         .people_add:hover{
             transform: scale(1.2,1.2);
