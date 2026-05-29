@@ -47,13 +47,19 @@
         <!-- ===== PANEL MILIEU ===== -->
         <section id="mid-panel">
             <div class="mid-header">
-                <div title='Mode tracking' class="mid-header-left"><img class='illusion' src={% static "img/rechercher.png" %} alt=""><input class="mid-header-left-text" name="research" type="text" placeholder="Entrer le nom de la personne que vous recherchez"> <input name='research-photo' style="display:none;" type="file" >
+                <div></div>
+                <div title='Mode tracking' class="mid-header-left"><img class='illusion' src={% static "img/rechercher.png" %} alt=""><input class="mid-header-left-text" name="research" type="text" placeholder="Entrer le nom de la personne que vous recherchez" list='suggestions'> <input name='research-photo' style="display:none;" type="file" >
                 <img src={% static "img/televerser.png" %} class="mid-header-left-file" title="Téléverser une photo">
                 <div class="mid-header-stop">
                     Stop Traking
                 </div>
             </div>
-               
+               {% comment %} Ici le code pour pouvoir implémenter une datalist {% endcomment %}
+               <datalist id="suggestions">
+                    {% for personne in liste %}
+                        <option value="{{ personne }}">
+                    {% endfor %}
+                </datalist>
                 
             </div>
             <div id="video-stage-container">
@@ -77,6 +83,38 @@
         </section>
 
     </main>
+
+
+    {% comment %} Ici pour l'affichage du div redimensionnable {% endcomment %}
+
+<div class="window" id="window" >
+
+    <div class="headers" id="headers">
+
+        <div class="titles">
+            <span>SourceName</span>
+            <span>Personne</span>
+            <span>Heure de détection</span>
+        </div>
+
+
+    </div>
+
+    <div class="contents">
+
+        <table>
+
+            <tbody id="tbody"></tbody>
+
+        </table>
+
+    </div>
+
+
+</div>
+
+
+
 
     <!-- ===== POP-UP AJOUT SOURCE ===== -->
     <div id="camera-popup" class="pop-up">
@@ -217,6 +255,8 @@
         <span>Incluire toute les dates</span>
     </div>
 </div>
+
+
 
 
     {% comment %} Fin du pop pour le téléchargement et la vue des présents  {% endcomment %}

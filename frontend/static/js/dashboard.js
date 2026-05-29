@@ -1148,10 +1148,10 @@ async function connexionautomatique() {
 
 
 function connexionlimite(){
-    const trylimit = setInterval(connexionautomatique,3000)
+    const trylimit = setInterval(connexionautomatique,6000)
     setTimeout(()=>{
         clearInterval(trylimit),console.log('Les 30s sont terminés')
-    },30000)
+    },60000)
 }
 
 
@@ -1162,15 +1162,45 @@ const filerechercher = document.querySelector('.mid-header-left-file')
 const illusion = document.querySelector('.illusion')
 const stoptraking = document.querySelector('.mid-header-stop')
 const conteneur = document.querySelector('#video-stage-container')
+
+// Cette fonction va me permettre de ne pas afficher tous le datalist lorsqu'on clique sur l'input namerechercher
+
+// 1. Au clic ou au focus : on retire l'attribut pour bloquer l'affichage automatique
+namerechercher.addEventListener('focus', () => {
+    namerechercher.removeAttribute('list');
+});
+
+// 2. Dès que l'utilisateur tape une touche : on remet l'attribut pour filtrer
+namerechercher.addEventListener('input', () => {
+    // On ne remet la liste que si l'input n'est pas vide
+    if (namerechercher.value.trim() !== "") {
+        namerechercher.setAttribute('list', 'suggestions');
+    } else {
+        namerechercher.removeAttribute('list');
+    }
+});
+
+// 3. Si l'utilisateur clique en dehors (blur) : sécurité pour nettoyer l'état
+namerechercher.addEventListener('blur', () => {
+    namerechercher.removeAttribute('list');
+});
+
+
+
 let trakingnumber
 illusion.addEventListener('click',()=>{
     illusion.style.display='none'
     namerechercher.style.display='block'
     filerechercher.style.display='block'
     stoptraking.style.display = 'block'
+    document.querySelector('.window').style.display='block'
+    document.querySelector('#app-container').style.height='75vh'
     traking = true 
     trakingnumber = setInterval(()=>{
-        rechercher_par_nom(namerechercher.value)
+        
+        rechercher_par_nom(namerechercher.value.trim())
+        
+        
     },500)
 })
 
@@ -1181,40 +1211,121 @@ stoptraking.addEventListener('click',()=>{
     namerechercher.style.display='none'
     filerechercher.style.display='none'
     stoptraking.style.display = 'none'
-    document.querySelectorAll('img').forEach(m=>{m.classList.remove('actif')})
+    document.querySelector('.window').style.display='none'
+    document.querySelector('#app-container').style.height='100vh'
+    document.querySelectorAll('img').forEach(m=>{m.classList.remove('actifs')})
     namerechercher.value=''
 })
 
+let traker = {} // On crée un objet pour pouvoir enregistrer les valeurs des gens 
+
 // Donnees  = {framename:{src:lien,liste:{'canisius',couleur}}}
-function rechercher_par_nom(nom){
-    // Cette fonction va nous permettre de rechercher une personne en utilisant son nom 
-    nom = nom.toLowerCase().trim()
-    const frametrouve = []
-    if(!donnees) return 
-    for (let [key,value] of Object.entries(donnees)){
-        // On met les borders initiaux en enlevant la mauvaise classe 
-        document.querySelectorAll(`img.${key}`).forEach(img=>img.classList.remove('actif'))
-        document.querySelectorAll(`img.${key}`).forEach(img=>img.classList.remove('actif'))
+function rechercher_par_nom(noms) {
+  // Correction 1 — split + map + filter en une seule chaîne
+  const searching = noms
+    .split('+')
+    .map(m => m.toLowerCase().trim())
+    .filter(m => m.length > 0);
 
-        const newliste = Object.keys(value.liste).filter(e=>e.toLowerCase()===nom)
-        
-        if(newliste.length===0) continue
-        frametrouve.push(key)   
+  const frametrouve = [];
+  if (!donnees) return;
 
+  for (let [key, value] of Object.entries(donnees)) {
+    document.querySelectorAll(`img.${key}, video.${key}`)
+      .forEach(el => el.classList.remove('actifs'));
+
+    const liste = Object.keys(value?.liste ?? {}).map(e => e.toLowerCase());
+
+    // Correction 2 — for...of au lieu de for...in
+    for (const nom of searching) {
+      if (liste.includes(nom)) {
+        traker[nom] = {}
+        // Correction 3 — éviter les doublons
+        if (!frametrouve.includes(key)) {
+          frametrouve.push(key);
+          const dii = new Date()
+          traker[nom].source = key // Enregistrement dans traker
+          traker[nom].temps = dii.toLocaleTimeString()
+          // Maintenant, on fait l'ajout sur le tableau des trakers
+          updateroradd(traker[nom].source,nom,traker[nom].temps)
+        }
+        break; // un match suffit pour cette frame
+      }
     }
-     
+  }
 
-    frametrouve.forEach(nom=>{
-        
-        document.querySelectorAll(`img.${nom}`).forEach(img=>img.classList.add('actif'))
-        document.querySelectorAll(`video.${nom}`).forEach(img=>img.classList.add('actif'))
-    })
-
-    }
-
-function arretertraking(){
-
+  frametrouve.forEach(framekey => {
+    document.querySelectorAll(`img.${framekey}, video.${framekey}`)
+      .forEach(el => el.classList.add('actifs'));
+  });
 }
+
+
+
+// Maintenant, nous allons commen
+
+
+
+/* =====================================
+    VARIABLES
+===================================== */
+
+const windowDiv = document.getElementById('window');
+const header = document.getElementById('headers');
+
+/* =====================================
+    CLOSE
+===================================== */
+
+
+/* =====================================
+    AJOUT DYNAMIQUE
+===================================== */
+
+const tbody =
+    document.getElementById('tbody');
+
+function ajouterPersonne( // Cette fonction permet d'ajouter une personne à la base des personnes recherchés 
+    sourcename,
+    personne,
+    heure
+){
+
+    const tr =
+        document.createElement('tr');
+        tr.classList.add(`${personne}`)
+
+    tr.innerHTML = `
+        <td>${sourcename}</td>
+        <td>${personne}</td>
+        <td>${heure}</td>
+    `;
+
+    tbody.prepend(tr);
+}
+
+/* =====================================
+    TEST
+===================================== */
+
+
+
+
+function updateroradd(sourcename,personne,heure){
+    if (traker.length===0)return
+    const ligne = document.querySelector(`tr.${personne}`)
+    if (ligne){
+        
+        ligne.querySelectorAll('td')[0].textContent = traker[personne].source = sourcename
+        ligne.querySelectorAll('td')[2].textContent = traker[personne].temps = heure
+        tbody.prepend(ligne)
+    }
+    else{
+        ajouterPersonne(sourcename,personne,heure)
+    }
+}
+
+
 
     // ============================================================
     //  INIT

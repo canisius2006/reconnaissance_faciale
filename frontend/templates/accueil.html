@@ -24,6 +24,186 @@
     </div>
 
 </div>
+
+
+<div class="rf-about" id="en-savoir-plus">
+
+  <section class="rf-section">
+    <div class="rf-grid-2">
+      <div>
+        <div class="rf-section-label">À propos du projet</div>
+        <h2 class="rf-heading">Reconnaissance faciale <span>en temps réel</span></h2>
+        <div class="rf-divider"></div>
+        <p class="rf-body">Un système complet de détection, suivi et identification de visages, conçu pour fonctionner en continu avec plusieurs personnes simultanément — sans dépendance cloud, entièrement local.</p>
+        <div class="rf-badge-row">
+          <span class="rf-badge">Python</span>
+          <span class="rf-badge">Django</span>
+          <span class="rf-badge">OpenCV</span>
+          <span class="rf-badge">InsightFace</span>
+          <span class="rf-badge">YuNet</span>
+          <span class="rf-badge">SORT</span>
+        </div>
+      </div>
+      <div class="rf-visual-box">
+        <div class="rf-stat">
+          <div class="rf-stat-label">Modèle de reconnaissance</div>
+          <div class="rf-stat-val">buffalo_l</div>
+          <div class="rf-stat-sub">InsightFace ArcFace — embeddings 512D</div>
+        </div>
+        <div class="rf-stat">
+          <div class="rf-stat-label">Algorithme de tracking</div>
+          <div class="rf-stat-val">SORT</div>
+          <div class="rf-stat-sub">Kalman Filter + Algorithme Hongrois</div>
+        </div>
+        <div class="rf-stat">
+          <div class="rf-stat-label">Détecteur de visages</div>
+          <div class="rf-stat-val">YuNet</div>
+          <div class="rf-stat-sub">OpenCV DNN — rapide et précis</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rf-section">
+    <div class="rf-section-label">Architecture du pipeline</div>
+    <div class="rf-grid-2">
+      <div>
+        <h2 class="rf-heading">Comment ça <span>fonctionne</span></h2>
+        <p class="rf-body">Chaque frame vidéo traverse une chaîne de traitement rigoureuse, de la détection brute jusqu'à l'identification persistante à travers le temps.</p>
+      </div>
+      <div class="rf-pipeline">
+        <div class="rf-step">
+          <div class="rf-step-num">01</div>
+          <div class="rf-step-content">
+            <h4>Capture & Détection</h4>
+            <p>YuNet détecte les visages dans chaque frame en temps réel, retournant leurs bounding boxes et landmarks faciaux.</p>
+          </div>
+        </div>
+        <div class="rf-step">
+          <div class="rf-step-num">02</div>
+          <div class="rf-step-content">
+            <h4>Suivi multi-visages (SORT)</h4>
+            <p>Chaque visage reçoit un ID persistant via filtre de Kalman + algorithme hongrois, même en cas d'occultation temporaire.</p>
+          </div>
+        </div>
+        <div class="rf-step">
+          <div class="rf-step-num">03</div>
+          <div class="rf-step-content">
+            <h4>Extraction d'embeddings</h4>
+            <p>InsightFace (ArcFace) génère un vecteur de 512 dimensions représentant le visage de manière unique.</p>
+          </div>
+        </div>
+        <div class="rf-step">
+          <div class="rf-step-num">04</div>
+          <div class="rf-step-content">
+            <h4>Identification & Re-vérification</h4>
+            <p>Comparaison par similarité cosinus avec la base de données. Les visages inconnus sont re-vérifiés périodiquement.</p>
+          </div>
+        </div>
+        <div class="rf-step">
+          <div class="rf-step-num">05</div>
+          <div class="rf-step-content">
+            <h4>Affichage & Streaming</h4>
+            <p>Le résultat annoté est streamé via Django vers l'interface web en temps réel.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rf-section">
+    <div class="rf-section-label">Fonctionnalités clés</div>
+    <h2 class="rf-heading" style="max-width:500px">Ce que le système <span>fait</span></h2>
+    <div class="rf-grid-3">
+      <div class="rf-card">
+        <div class="rf-card-icon">👁️</div>
+        <div class="rf-card-title">Détection robuste</div>
+        <div class="rf-card-text">Détection de plusieurs visages simultanément, résistante aux variations d'éclairage et d'angle.</div>
+      </div>
+      <div class="rf-card">
+        <div class="rf-card-icon">🔗</div>
+        <div class="rf-card-title">IDs persistants</div>
+        <div class="rf-card-text">Chaque personne conserve son identifiant de tracking à travers les frames, même si elle disparaît brièvement.</div>
+      </div>
+      <div class="rf-card">
+        <div class="rf-card-icon">🧠</div>
+        <div class="rf-card-title">Reconnaissance ArcFace</div>
+        <div class="rf-card-text">Embeddings haute précision via buffalo_l, comparaison cosinus pour identifier les personnes enregistrées.</div>
+      </div>
+      <div class="rf-card">
+        <div class="rf-card-icon">🔄</div>
+        <div class="rf-card-title">Re-vérification auto</div>
+        <div class="rf-card-text">Les visages marqués INCONNU sont re-soumis à la reconnaissance après un délai configurable.</div>
+      </div>
+      <div class="rf-card">
+        <div class="rf-card-icon">⚡</div>
+        <div class="rf-card-title">Traitement local</div>
+        <div class="rf-card-text">Aucune donnée envoyée dans le cloud. Tout tourne en local — vie privée préservée, latence minimale.</div>
+      </div>
+      <div class="rf-card">
+        <div class="rf-card-icon">🌐</div>
+        <div class="rf-card-title">Interface web Django</div>
+        <div class="rf-card-text">Stream vidéo accessible via navigateur, gestion des enregistrements et visualisation en temps réel.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rf-section">
+    <div class="rf-section-label">Cas d'usage</div>
+    <div class="rf-grid-2">
+      <div>
+        <h2 class="rf-heading">Pour <span>qui</span>, pour quoi</h2>
+        <p class="rf-body">Conçu comme projet de fin d'études avec une architecture extensible, ce système peut s'adapter à plusieurs contextes réels.</p>
+        <div class="rf-use-grid">
+          <div class="rf-use-item"><div class="rf-use-dot"></div><div class="rf-use-text">Contrôle d'accès automatisé</div></div>
+          <div class="rf-use-item"><div class="rf-use-dot"></div><div class="rf-use-text">Gestion des présences</div></div>
+          <div class="rf-use-item"><div class="rf-use-dot"></div><div class="rf-use-text">Surveillance intelligente</div></div>
+          <div class="rf-use-item"><div class="rf-use-dot"></div><div class="rf-use-text">Identification en réunion</div></div>
+          <div class="rf-use-item"><div class="rf-use-dot"></div><div class="rf-use-text">Campus & écoles</div></div>
+          <div class="rf-use-item"><div class="rf-use-dot"></div><div class="rf-use-text">Recherche en vision par ordinateur</div></div>
+        </div>
+      </div>
+      <div class="rf-visual-box">
+        <div class="rf-section-label" style="margin-bottom:1.2rem">Stack technique</div>
+        <div style="display:flex;flex-direction:column;gap:0.8rem">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid #111">
+            <span style="font-size:0.875rem;color:#aaa">Backend</span>
+            <span style="font-size:0.875rem;color:#fff">Django + Python</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid #111">
+            <span style="font-size:0.875rem;color:#aaa">Détection</span>
+            <span style="font-size:0.875rem;color:#fff">YuNet (OpenCV DNN)</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid #111">
+            <span style="font-size:0.875rem;color:#aaa">Tracking</span>
+            <span style="font-size:0.875rem;color:#fff">SORT (Kalman + Hongrois)</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid #111">
+            <span style="font-size:0.875rem;color:#aaa">Reconnaissance</span>
+            <span style="font-size:0.875rem;color:#fff">InsightFace buffalo_l</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0;border-bottom:1px solid #111">
+            <span style="font-size:0.875rem;color:#aaa">Similarité</span>
+            <span style="font-size:0.875rem;color:#fff">Cosinus sur embeddings 512D</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:0.75rem 0">
+            <span style="font-size:0.875rem;color:#aaa">Interface</span>
+            <span style="font-size:0.875rem;color:#fff">Stream MJPEG / HTML</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="rf-cta">
+    <h2>Prêt à l'essayer ?</h2>
+    <p>Lancez le système et commencez à enregistrer des visages.</p>
+    <a href={% url "dashboard" %} class="rf-btn">Commencer →</a>
+  </div>
+
+</div>
+
+
 <script src={% static "js/accueil.js" %}></script>
 {% endblock body %}
 

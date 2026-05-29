@@ -1,3 +1,7 @@
+html{
+    scroll-behavior: smooth;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -119,3 +123,51 @@ button:hover {
     z-index:1000;
     /* transition:transform 0.1s ease-in-out; 
 } */
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
+  
+  .rf-about { font-family: 'DM Sans', sans-serif; background: #050505; color: #e8e8e8; padding: 0; }
+  .rf-section { padding: 6rem 4rem; border-top: 1px solid #1a1a1a; }
+  .rf-section-label { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 0.2em; color: #3b82f6; text-transform: uppercase; margin-bottom: 1rem; }
+  .rf-heading { font-size: 2.4rem; font-weight: 600; color: #fff; line-height: 1.15; margin: 0 0 1.5rem; }
+  .rf-heading span { color: #3b82f6; }
+  .rf-body { font-size: 1rem; color: #888; line-height: 1.8; max-width: 600px; }
+  .rf-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: center; }
+  .rf-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; margin-top: 3rem; }
+  .rf-card { background: #0d0d0d; border: 1px solid #1e1e1e; border-radius: 12px; padding: 2rem; transition: border-color 0.2s; }
+  .rf-card:hover { border-color: #3b82f6; }
+  .rf-card-icon { font-size: 1.5rem; margin-bottom: 1rem; }
+  .rf-card-title { font-size: 1rem; font-weight: 600; color: #fff; margin-bottom: 0.5rem; }
+  .rf-card-text { font-size: 0.875rem; color: #666; line-height: 1.7; }
+  .rf-pipeline { display: flex; flex-direction: column; gap: 0; }
+  .rf-step { display: flex; gap: 1.5rem; align-items: flex-start; padding: 1.5rem 0; border-bottom: 1px solid #111; }
+  .rf-step:last-child { border-bottom: none; }
+  .rf-step-num { font-family: 'Space Mono', monospace; font-size: 0.75rem; color: #3b82f6; min-width: 28px; margin-top: 4px; }
+  .rf-step-content h4 { font-size: 0.95rem; font-weight: 600; color: #ddd; margin: 0 0 0.3rem; }
+  .rf-step-content p { font-size: 0.85rem; color: #555; margin: 0; line-height: 1.6; }
+  .rf-badge { display: inline-block; font-family: 'Space Mono', monospace; font-size: 0.7rem; background: #0f1929; border: 1px solid #1d3461; color: #60a5fa; padding: 3px 10px; border-radius: 4px; margin: 3px 3px 3px 0; }
+  .rf-badge-row { margin-top: 1.5rem; }
+  .rf-visual-box { background: #0a0a0a; border: 1px solid #1a1a1a; border-radius: 16px; padding: 2.5rem; position: relative; overflow: hidden; }
+  .rf-visual-box::before { content: ''; position: absolute; top: -40px; right: -40px; width: 180px; height: 180px; background: radial-gradient(circle, rgba(59,130,246,0.08) 0%, transparent 70%); pointer-events: none; }
+  .rf-stat { margin-bottom: 1.5rem; }
+  .rf-stat-label { font-family: 'Space Mono', monospace; font-size: 0.7rem; color: #444; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.3rem; }
+  .rf-stat-val { font-size: 1.8rem; font-weight: 600; color: #fff; line-height: 1; }
+  .rf-stat-sub { font-size: 0.8rem; color: #555; margin-top: 2px; }
+  .rf-divider { width: 40px; height: 2px; background: #3b82f6; margin: 1.5rem 0; }
+  .rf-use-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 2rem; }
+  .rf-use-item { display: flex; align-items: flex-start; gap: 0.75rem; }
+  .rf-use-dot { width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; margin-top: 7px; flex-shrink: 0; }
+  .rf-use-text { font-size: 0.875rem; color: #777; line-height: 1.5; }
+  .rf-cta { text-align: center; padding: 5rem 4rem; border-top: 1px solid #111; }
+  .rf-cta h2 { font-size: 2rem; font-weight: 600; color: #fff; margin-bottom: 0.75rem; }
+  .rf-cta p { color: #555; margin-bottom: 2rem; }
+  .rf-btn { display: inline-block; background: #3b82f6; color: #fff; padding: 0.8rem 2rem; border-radius: 8px; font-size: 0.95rem; font-weight: 500; text-decoration: none; transition: background 0.2s; }
+  .rf-btn:hover { background: #2563eb; }
+
+  @media (max-width: 700px) {
+    .rf-section { padding: 4rem 1.5rem; }
+    .rf-grid-2 { grid-template-columns: 1fr; gap: 2.5rem; }
+    .rf-grid-3 { grid-template-columns: 1fr; }
+    .rf-use-grid { grid-template-columns: 1fr; }
+    .rf-heading { font-size: 1.7rem; }
+  }

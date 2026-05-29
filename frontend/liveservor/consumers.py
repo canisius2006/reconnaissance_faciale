@@ -590,6 +590,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                                 if nom not in self.liste_personne_reconnues:
                                     self.liste_personne_reconnues.add(nom)
                                     value = await Reconnus.objects.filter(nom=nom,date=timezone.now().date()).aexists()
+                                    print(timezone.now())
+                                    print(value)
                                     if not value:
                                         await sync_to_async(Reconnus.objects.create)(source=self.framename,nom=nom)
                                         #Pour pouvoir avoir ma liste sans doublon

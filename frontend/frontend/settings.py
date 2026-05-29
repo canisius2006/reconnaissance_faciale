@@ -131,6 +131,8 @@ TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
+TIME_ZONE = 'Africa/Lagos'  # ou 'Africa/Cotonou'
+
 USE_TZ = True
 
 

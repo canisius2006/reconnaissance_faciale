@@ -14,12 +14,14 @@ from .creactionfichier import enregistrer_presence
 from django.core.files.storage import default_storage
 from . import ajouter_une_personne as aj 
 # Create your views here.
+BASE_DIR = Path(__file__).resolve().parent.parent
 
+chemin_base = BASE_DIR/'static/model/embeddings.json'
 
 def accueil(request):
     return render(request,'accueil.html') 
 
-def dashboard(request:HttpRequest)->HttpResponse:
+def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer la liste des noms des personnes dans la base de données et l'envoyer dans le template 
     """la vue des caméras """
     if request.method=='POST':
         source = request.POST.get('source')
@@ -29,8 +31,11 @@ def dashboard(request:HttpRequest)->HttpResponse:
             url = request.POST.get('url')
             print(framename,url)
             return JsonResponse({'framename':framename,'url':url})
+    with open(chemin_base,'r') as f:
+        base:dict = json.load(f)
+    liste = list(base.keys())
         
-    return render(request,'dashboard.html')
+    return render(request,'dashboard.html',{'liste':liste})
 
 def reconnaissance_faciale_image(request:HttpRequest,name):
     """Pour pouvoir faire la reconnaissance pour l'image envoyé sous forme de requête post"""
@@ -142,3 +147,5 @@ def liste_source(request:HttpRequest)->JsonResponse:
     liste = list(liste)
     print(liste)
     return JsonResponse({'liste':liste})
+
+

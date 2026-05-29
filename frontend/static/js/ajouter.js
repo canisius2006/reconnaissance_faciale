@@ -1,4 +1,3 @@
-    
 // ─────────────────────────────────────────────
 //  STATE
 // ─────────────────────────────────────────────
@@ -10,6 +9,9 @@ let droidcamUrl = null;
 let droidcamRetryCount = 0;
 const MAX_DC_RETRIES = 3;
 
+// FIX 3 — Timer global pour showTempAlert (évite les conflits entre onglets)
+let tempAlertTimer = null;
+
 // ─────────────────────────────────────────────
 //  SOURCE SELECTION
 // ─────────────────────────────────────────────
@@ -19,6 +21,9 @@ function selectSource(src) {
   document.querySelector(`[data-src="${src}"]`).classList.add('active');
 
   stopStream();
+
+  // FIX 3 — Annuler tout timer de temp-alert en cours avant de changer d'onglet
+  if (tempAlertTimer) { clearTimeout(tempAlertTimer); tempAlertTimer = null; }
   hideAlert('droidAlert');
   document.getElementById('droidTips').classList.add('hidden');
 
@@ -68,23 +73,20 @@ async function startCamera() {
 
 function stopStream() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-  // Stop DroidCam img stream
   const dcImg = document.getElementById('droidcamImg');
   dcImg.src = ''; dcImg.style.display = 'none';
   droidcamUrl = null;
 }
 
 // ─────────────────────────────────────────────
-//  DROIDCAM — FIX PRINCIPAL
-//  DroidCam fournit un flux MJPEG via HTTP.
-//  Les navigateurs bloquent <video src="http://..."> cross-origin,
-//  mais acceptent <img src="http://..."> pour les flux MJPEG.
-//  On utilise donc <img id="droidcamImg"> et on capture via canvas.
+//  DROIDCAM
 // ─────────────────────────────────────────────
 async function connectDroidCam() {
   const ip   = document.getElementById('dcIp').value.trim();
   const port = document.getElementById('dcPort').value.trim() || '4747';
 
+  // FIX 3 — Annuler le timer temp-alert avant toute nouvelle alerte
+  if (tempAlertTimer) { clearTimeout(tempAlertTimer); tempAlertTimer = null; }
   hideAlert('droidAlert');
   document.getElementById('droidTips').classList.add('hidden');
   droidcamRetryCount = 0;
@@ -106,18 +108,22 @@ async function connectDroidCam() {
 }
 
 function attemptDroidCamConnect() {
-  const dcImg      = document.getElementById('droidcamImg');
   const placeholder= document.getElementById('placeholderMsg');
   const captureBtn = document.getElementById('captureBtn');
 
   droidcamRetryCount++;
 
-  // Probe: on charge le flux MJPEG dans un <img> avec timeout
-  // Si onload se déclenche → le stream est accessible
+  // FIX 2 — Remplacer le <img> par un clone propre à chaque tentative
+  // Cela coupe toute connexion réseau pendante du navigateur sur l'ancienne tentative
+  const old = document.getElementById('droidcamImg');
+  const dcImg = old.cloneNode(false);
+  dcImg.id = 'droidcamImg';
+  old.parentNode.replaceChild(dcImg, old);
+
   let loaded = false;
   const probeTimeout = setTimeout(() => {
     if (!loaded) {
-      dcImg.onload = null;
+      dcImg.onload  = null;
       dcImg.onerror = null;
       dcImg.src = '';
       handleDCError('timeout');
@@ -128,7 +134,6 @@ function attemptDroidCamConnect() {
     if (loaded) return;
     loaded = true;
     clearTimeout(probeTimeout);
-    // Flux actif !
     placeholder.style.display = 'none';
     dcImg.style.display = 'block';
     captureBtn.disabled = photos.length >= MAX_PHOTOS;
@@ -137,7 +142,6 @@ function attemptDroidCamConnect() {
     document.getElementById('droidTips').classList.add('hidden');
     droidcamRetryCount = 0;
 
-    // Surveiller la perte de connexion
     dcImg.onerror = () => {
       if (currentSource === 'droidcam') handleDCError('stream_lost');
     };
@@ -149,8 +153,7 @@ function attemptDroidCamConnect() {
     handleDCError('unreachable');
   };
 
-  // Charge le flux MJPEG directement dans le <img>
-  // Le cache-buster force une nouvelle connexion à chaque tentative
+  // Cache-buster pour forcer une nouvelle requête HTTP
   dcImg.src = droidcamUrl + '?t=' + Date.now();
 }
 
@@ -220,15 +223,27 @@ function capturePhoto() {
   if (photos.length >= MAX_PHOTOS) return;
   if (currentSource === 'file') { document.getElementById('fileInput').click(); return; }
 
-  // Source à dessiner sur le canvas
   const source = currentSource === 'droidcam'
     ? document.getElementById('droidcamImg')
     : document.getElementById('videoEl');
 
+  // FIX 1 — Pour DroidCam (<img> MJPEG), naturalWidth peut valoir 0
+  // si le premier frame n'est pas encore entièrement rendu.
+  // On utilise les dimensions du conteneur comme fallback fiable.
+  const container = document.getElementById('videoContainer');
+  const w = (source.videoWidth  || source.naturalWidth)  || container.clientWidth  || 640;
+  const h = (source.videoHeight || source.naturalHeight) || container.clientHeight || 480;
+
+  // Vérification : si les dimensions sont toujours nulles, le flux n'est pas prêt
+  if (currentSource === 'droidcam' && source.naturalWidth === 0) {
+    showTempAlert(' Le flux DroidCam n\'est pas encore prêt. Attendez que l\'image s\'affiche.', 'warn');
+    return;
+  }
+
   const canvas = document.createElement('canvas');
-  canvas.width  = source.videoWidth  || source.naturalWidth  || 640;
-  canvas.height = source.videoHeight || source.naturalHeight || 480;
-  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  canvas.width  = w;
+  canvas.height = h;
+  canvas.getContext('2d').drawImage(source, 0, 0, w, h);
 
   const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
   const label   = `${currentSource === 'droidcam' ? 'DroidCam' : 'Caméra'} · Photo ${photos.length + 1}`;
@@ -251,16 +266,11 @@ function addPhoto(dataUrl, blob, label) {
 }
 
 // ─────────────────────────────────────────────
-//  GALLERY — FIX SUPPRESSION
-//  Problème original : le onclick du slot parent interceptait
-//  le clic sur la croix avant stopPropagation.
-//  Solution : on utilise addEventListener avec un vrai gestionnaire
-//  séparé pour le slot (zoom) et data-attributes pour supprimer.
+//  GALLERY
 // ─────────────────────────────────────────────
 function renderGallery() {
   for (let i = 0; i < MAX_PHOTOS; i++) {
     const slot = document.getElementById(`slot${i}`);
-    // Nettoyer les anciens listeners en remplaçant le nœud
     const fresh = slot.cloneNode(false);
     slot.parentNode.replaceChild(fresh, slot);
     fresh.id = `slot${i}`;
@@ -273,13 +283,11 @@ function renderGallery() {
         <button class="thumb-del" data-idx="${i}" title="Supprimer cette photo">✕</button>
       `;
 
-      // Bouton supprimer — listener dédié, stopPropagation
       fresh.querySelector('.thumb-del').addEventListener('click', function(e) {
         e.stopPropagation();
         deletePhoto(parseInt(this.dataset.idx));
       });
 
-      // Clic sur le slot → lightbox (seulement si pas sur la croix)
       fresh.addEventListener('click', function(e) {
         if (e.target.classList.contains('thumb-del')) return;
         openLightbox(i);
@@ -308,7 +316,7 @@ function deletePhoto(idx) {
     btn.classList.remove('done');
     document.getElementById('captureBtnText').textContent = 'Capturer';
   }
-  document.getElementById('sendBtn').disabled = photos.length < 5; // Par conséquent 5 
+  document.getElementById('sendBtn').disabled = photos.length < 5;
 }
 
 function clearAll() {
@@ -362,10 +370,10 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbo
 //  SEND TO DJANGO
 // ─────────────────────────────────────────────
 async function sendPhotos() {
-  const nom = sanitizeName(document.querySelector('#people-name').value)
-  const url      = ''
+  const nom = sanitizeName(document.querySelector('#people-name').value);
+  const url      = '';
   const statusEl = document.getElementById('sendStatus');
-  if (!nom) {statusEl.style.color='var(--warn)'; statusEl.textContent=' Entrez Votre nom.'; return;}
+  if (!nom) { statusEl.style.color='var(--warn)'; statusEl.textContent=' Entrez Votre nom.'; return; }
   if (!photos.length) { statusEl.style.color='var(--warn)'; statusEl.textContent=' Aucune photo.'; return; }
 
   const sendBtn = document.getElementById('sendBtn');
@@ -378,15 +386,16 @@ async function sendPhotos() {
     photos.forEach((p,i) => fd.append('photos', p.blob, `photo_${i+1}.jpg`));
     fd.append('count', photos.length);
     fd.append('source', currentSource);
-    fd.append('nom',nom)
+    fd.append('nom', nom);
 
-    const res = await fetch(url, { method: 'POST',headers:{
-        'X-CSRFToken':document.getElementsByName('csrfmiddlewaretoken')[0].value
+    const res = await fetch(url, { method: 'POST', headers: {
+      'X-CSRFToken': document.getElementsByName('csrfmiddlewaretoken')[0].value
     }, body: fd });
+
     if (res.ok) {
       statusEl.style.color = 'var(--green)';
       statusEl.textContent = `✅ ${photos.length} photo(s) envoyée(s) avec succès !`;
-      setTimeout(()=>{window.location.pathname='dashboard/'},1000)
+      setTimeout(() => { window.location.pathname = 'dashboard/'; }, 1000);
     } else {
       const txt = await res.text().catch(() => '');
       statusEl.style.color = 'var(--red)';
@@ -411,24 +420,35 @@ function dataURItoBlob(dataURI) {
   for (let i = 0; i < bytes.length; i++) ia[i] = bytes.charCodeAt(i);
   return new Blob([ab], { type: mime });
 }
+
 function showAlert(id, type, html) {
   const el = document.getElementById(id);
   el.className = `alert ${type} show`; el.innerHTML = html;
 }
+
 function hideAlert(id) {
-  const el = document.getElementById(id); el.className = 'alert'; el.innerHTML = '';
+  const el = document.getElementById(id);
+  el.className = 'alert'; el.innerHTML = '';
 }
+
+// FIX 3 — showTempAlert utilise le timer global pour éviter les conflits
 function showTempAlert(msg, type) {
+  if (tempAlertTimer) { clearTimeout(tempAlertTimer); tempAlertTimer = null; }
   showAlert('droidAlert', type, msg);
-  setTimeout(() => hideAlert('droidAlert'), 4000);
+  tempAlertTimer = setTimeout(() => {
+    hideAlert('droidAlert');
+    tempAlertTimer = null;
+  }, 4000);
 }
+
 function sanitizeName(name) {
   return name
-  .normalize("NFD")
+    .normalize("NFD")
     .trim()
-    .replace(/[^\p{L}\s\-'\d_]/gu, '') // Remplace tout ce qui n'est pas autorisé par rien
-    .replace(' ',''); // Remplace l'espace par rien
+    .replace(/[^\p{L}\s\-'\d_]/gu, '')
+    .replace(' ', '');
 }
+
 // ─────────────────────────────────────────────
 //  INIT
 // ─────────────────────────────────────────────
