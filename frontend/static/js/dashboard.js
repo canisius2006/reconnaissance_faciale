@@ -464,9 +464,9 @@ function AjouterPanelDroit() {
     // ============================================================
     function _rafraichirPanelGauche() {
         const container  = document.getElementById('channel-items-container'); 
-        const countEl    = document.getElementById('members-count');
+        
         container.innerHTML = '';
-        countEl.textContent = allAvailableMembers.length;
+        
 
         guildFamilies.forEach(famille => {
             const familleCard = document.createElement('div');
@@ -1000,27 +1000,7 @@ function afficherPresence(data) {
   }).join('');
 }
 
-function intervalajouter(){
-    // Cette fonction permet d'ajouter les gens sans recharger la page 
-    listeContent.innerHTML = personnes.map(p => {
-    const initiales = p.nom.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
-    const source       = p.source;
-    const heure     = p.heure ? `<span class="heure">${p.heure}</span>` : '';
-    return `
-      <div class="row" title=${!document.getElementById('cb1-6').checked ? p.date:"Toutes les dates"}>
-        <div class="avatar present">${initiales}</div>
-        <div class="row-info">
-          <div class="row-nom">${p.nom}</div>
-        </div>
-        <div class="row-right">
-          ${heure}
-          ${ document.getElementById('cb1-6').checked ? `<span class='badge' style='color:blue' >${p.date}</span>`:''}
-          <span class="badge ">${source}</span>
-        </div>
-      </div>
-    `;
-  }).join('');
-}
+
 
 function afficherErreur() {
   labelStats.textContent = 'Erreur réseau';
@@ -1044,11 +1024,11 @@ document.querySelector('.date-picker-wrap').addEventListener('click',()=>{
 document.querySelector('.retour').addEventListener('click',()=>{window.location.pathname=''})
 
 // Afficher le menu
-let encours 
+
 document.querySelector('.menu-t').addEventListener('click',()=>{
     document.querySelector('.overlay').style.display='flex'
     mettreAJour()
-    encours = setInterval(intervalajouter,800)
+   
 })
  document.getElementById('cb1-6').addEventListener('change',()=>{
     mettreAJour()
@@ -1058,7 +1038,7 @@ document.querySelector('.overlay').addEventListener('click',(e)=>{
     if (e.target==document.querySelector('.overlay')){
         document.querySelector('.overlay').style.display='none';
         document.getElementById('cb1-6').checked = false
-        clearInterval(encours)
+       
     }
 })
 

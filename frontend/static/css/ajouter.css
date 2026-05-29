@@ -30,6 +30,15 @@
       radial-gradient(ellipse 60% 40% at 80% 100%, rgba(247,79,142,0.06) 0%, transparent 60%);
   }
 
+
+  .retour{
+    position:absolute;
+    height:25px;
+    width:25px;
+    border-radius: 5px;
+    top:10px;
+    left:10px;
+  }
   /* ── HEADER ── */
   header {
     width: 100%;
