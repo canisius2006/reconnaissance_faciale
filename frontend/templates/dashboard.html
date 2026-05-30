@@ -113,6 +113,51 @@
 
 </div>
 
+{% comment %} Ici le div popup pour demander à l'utilisateur de choisir une image pour le mode tracking {% endcomment %}
+
+
+<div class="uploadbox">
+
+    <div class="uploadbox-top">
+        <h2>Ajouter une image</h2>
+        <span class="uploadbox-close">&times;</span>
+    </div>
+
+    <div class="uploadbox-dropzone">
+
+        <img class="uploadbox-preview">
+
+        <div class="uploadbox-placeholder">
+            📸 Cliquez ici<br>
+            ou<br>
+            🖱️ Glissez une image
+        </div>
+
+    </div>
+
+    <input style='display:none'
+        type="file"
+        class="uploadbox-input"
+        accept="image/*"
+    >
+
+    <div class="uploadbox-actions">
+
+        <button class="uploadbox-cancel">
+            Annuler
+        </button>
+
+        <button
+            class="uploadbox-confirm"
+            disabled
+        >
+            Confirmer
+        </button>
+
+    </div>
+
+</div>
+
 
 
 

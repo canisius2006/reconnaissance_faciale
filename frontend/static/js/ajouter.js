@@ -399,7 +399,7 @@ async function sendPhotos() {
     } else {
       const txt = await res.text().catch(() => '');
       statusEl.style.color = 'var(--red)';
-      statusEl.textContent = `❌ Erreur ${res.status} : ${txt.slice(0,120)}`;
+      statusEl.textContent = `❌ Erreur "Photo mal prise, Veuillez reessayer la capture" : `;
     }
   } catch(err) {
     statusEl.style.color = 'var(--red)';

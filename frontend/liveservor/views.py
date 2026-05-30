@@ -136,7 +136,7 @@ def ajouter(request:HttpRequest)->HttpResponse:
             return JsonResponse({'message':f'{nom} Ajouté dans la base de données avec succès','status':200})
 
         else:
-            return JsonResponse({'message':f'{nom} Erreur subvenue','status':405})
+            return JsonResponse({})
     return render(request,'ajouter.html')
 
 

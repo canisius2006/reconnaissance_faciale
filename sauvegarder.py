@@ -19,15 +19,15 @@ NOUVEAUTÉ :
 """
 
 # ─── IMPORTS ──────────────────────────────────────────────────────────────────
-import asyncio,io
-import base64,copy
+import asyncio
+import base64
 import json
 import math
 import os
 import threading
 import time
 import traceback
-from PIL import Image
+
 import cv2
 import numpy as np
 from filterpy.kalman import KalmanFilter
@@ -74,9 +74,9 @@ FRAME_H          = 480
 SCORE_THRESHOLD  = 0.75
 NMS_THRESHOLD    = 0.3
 DETECTION_EVERY  = 2
-MAX_AGE          = 5
+MAX_AGE          = 10
 MIN_HITS         = 3
-IOU_THRESHOLD    = 0.15
+IOU_THRESHOLD    = 0.25
 REINSPECT_DELAY  = 5.0
 
 # ── ANTI-LATENCE #1 : limiter le débit d'envoi ────────────────────────────────
@@ -241,9 +241,8 @@ detector = cv2.FaceDetectorYN.create(
 
 
 
-attributid = 0 #
 
-live_embeddings = {} # Cet dictionnaire regroupe les embeddings de tout le monde en live 
+
 # =============================================================
 # DÉTECTION / RECONNAISSANCE EN ARRIÈRE-PLAN
 # =============================================================
@@ -253,7 +252,6 @@ class Utilitaire():
         self.tracker     = SORTTracker()
         self.frame_count = 0
         self.live_dictionnaire = {}
-        
         
         self.dict_lock         = threading.Lock()
 
@@ -351,6 +349,10 @@ class Utilitaire():
                 self.en_cours.discard(tid)
 
 
+    def reconnaitre_inconnu(photo):
+        """Cette fonction va me permettre de reconnaitre même les inconnus sur une caméra"""
+        
+        
         
     
     def identifier(self,id_n):
@@ -444,13 +446,11 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 
                 asyncio.sleep(1)
                 asyncio.create_task(self.live_serveur(self.source))
-        
-                
-        
+                    
+
     
     async def live_serveur(self, source):
         """Cette fonction va gérer le mode live côté serveur"""
-        global attributid
         self.util = Utilitaire() #Créaction de la classe de nos besoins 
         self.nombre_essai = 0 # ça représente le nombre d'éssaie qu'il faut faire pour arrêter l'appel vers le même lien 
        
@@ -588,15 +588,12 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                             nom, pct = entree[1], entree[2]
                             if nom == "INCONNU":
                                 label = f" INCONNU  "
-                                live_embeddings[f'{attributid}']=[self.framename,self.util.live_dictionnaire[cid][0]]
-                                attributid+=1 # Ici, notre variable est incrémenter 
                             elif nom == "En cours d'Analyse":
                                 label = f" ..."
                             else:
                                 label = f" {nom} {round(np.random.uniform(0.8,0.98)*100,2)}%"
                                 color_css = '#{:02x}{:02x}{:02x}'.format(int(color[2]), int(color[1]), int(color[0]))
                                 base_personnes[nom] = [color_css]
-                                live_embeddings[nom]=[self.framename,self.util.live_dictionnaire[cid][0]] # Ici, j'enregistre l'embeddings avec le nom de la personne et le nom du framename(source) correspondant 
                                 
                                 if nom not in self.liste_personne_reconnues:
                                     self.liste_personne_reconnues.add(nom)
@@ -652,131 +649,5 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                         data = {'type': 'fin'}
                         self.close(4000,'On a déjà essayé la reconnexion plusieurs fois')
         cap.release()
-            
-            
     async def close(self, code = None, reason = None):
         return await super().close(code, reason)
-    
-    
-    
-    
-class TrackingConsumer(AsyncWebsocketConsumer):
-    """Cette classe va nous permettre de gérer le mode tracking"""
-    async def connect(self):
-        self.tracking = False 
-        await self.accept()
-        print('connexion accepté mode tracking')
-        # Ici, on va commencer par faire la fonction remise à zéro en même temps 
-        threading.Thread(target=self.remettreazero,daemon=True).start()
-    async def disconnect(self, code):
-        self.tracking = False 
-        print('Déconnexion au niveau du mode tracking')
-    
-    async def receive(self, text_data=None,bytes_data = None ):
-        
-        if bytes_data is not None:
-            self.tracking = True 
-            np_buffer = np.frombuffer(bytes_data, dtype=np.uint8)
-
-            # 2. Décoder ce buffer pour reconstruire l'image (Matrice H x L x Canaux)
-            # cv2.IMREAD_COLOR force le chargement en image couleur (3 canaux : B, G, R)
-            image_bgr = cv2.imdecode(np_buffer, cv2.IMREAD_COLOR)
-            print('image reçu')
-            if self.tracking:
-                await self.tracking_par_image(image_bgr)
-                print("Fin du tracking")
-        if text_data is not None:
-            try:
-                data = json.loads(text_data)
-                if len(data)==0:
-                    return
-                print(data, "C'est ce que le navigateur envoie")
-            except json.JSONDecodeError as e:
-                print(f'Erreur de parsing JSON : {e}')
-                return
-            message_type = data['type']
-            if message_type =='stoptrack':
-                self.tracking = False 
-                self.close(4001,'connexion fermé sous demande du navigateur')
-        if text_data is None:
-            return 
-            
-          
-            
-    async def get_embedding(self,img):
-        """
-        Calcule l'embedding d'une photo.
-        Retourne un vecteur numpy de 512 valeurs, ou None si échec.
-        """
-        
-        if img is None:
-            return []
-
-        visages = app_rec.get(img)
-        if len(visages) != 1:
-            return None
-
-        # embedding = vecteur de 512 valeurs calculé par ArcFace
-        # normed_embedding = embedding normalisé (norme = 1)
-        # La normalisation est nécessaire pour que la similarité cosinus
-        # soit simplement un produit scalaire (plus rapide à calculer)
-        return visages[0].normed_embedding  # shape : (512,) 
-
-    async def faire_comparaison(self,emb_inconnu):
-            """Cette fonction nous permet de faire la comparaison de emb"""
-            another_list = {} # En fait ce n'est pas vraiment une liste, c'est un dictionnaire  , de plus, il faut qu'il soit toujours vide au départ
-            if live_embeddings:another_list = copy.deepcopy(live_embeddings)
-            if len(another_list) ==0:return
-            
-            SEUIL_COSINUS = 0.5
-            liste_live_emb = [value[1] for value in another_list.values()]
-            liste_live_framename = [value[0] for value in another_list.values()]
-            liste_live_nom = list(another_list.keys())
-            liste_live_emb = np.stack(liste_live_emb)
-            liste_calcul_similarite = np.dot(liste_live_emb,emb_inconnu)
-            max_valeur = np.max(liste_calcul_similarite)
-            indice_max = np.argmax(liste_calcul_similarite)
-            #Maintenant, on va avoir le nom correspondant à la valeur maximale qu'on a obtenue
-            if max_valeur>SEUIL_COSINUS:
-                nom_trouve = liste_live_nom[indice_max]
-                framename = liste_live_framename[indice_max]
-                return [str(nom_trouve),str(framename)]
-            else:
-                return []
-    
-    async def tracking_par_image(self,photo):
-        """Cette photo nous permet de faire le mode tracking avec image"""
-        print("Je suis entrée dans la fonction traking")
-        
-        if self.tracking:
-            embd = await self.get_embedding(photo)
-
-            if embd is not None and embd.size >0:
-                while self.tracking:
-                    result = await self.faire_comparaison(embd)
-                    if result:
-                        result = json.dumps({'resultat':result,'type':'tracking'})
-                        await self.send(result)
-                    else:
-                        await self.send(json.dumps({}))
-                    await asyncio.sleep(1,5)
-            else:
-                result = json.dumps({'resultat':{},'type':'tracking'})
-                await self.send(result)
-                print('aucun embeddings détecté')
-        else:
-            await self.send(json.dumps({}))
-            self.close(4001,'Connexion fermé')
-            print('selftracking est false ici') 
-            
-    def remettreazero(self):
-        """CEtte fonction va nous permettre de mettre la base de donnees en temps réel à zéro"""
-        global live_embeddings
-        while True:
-            if self.tracking:
-                live_embeddings.clear()
-                live_embeddings = {}
-                time.sleep(1.5)
-            else:
-                self.close(4001,"La connexion s'est fermé")
-        

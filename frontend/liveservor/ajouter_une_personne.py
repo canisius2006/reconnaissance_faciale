@@ -75,7 +75,7 @@ def construire_base(dossier_propre:Path):
 
     if len(embeddings) == 0:
         print(f"  Aucun embedding pour {personne} — vérifier les photos")
-
+        return None
     # Calculer la moyenne de tous les embeddings de cette personne
     # np.mean(..., axis=0) fait la moyenne valeur par valeur
     # puis on renormalise pour que la norme reste = 1
@@ -91,7 +91,9 @@ def ajouter(chemin):
     """Cette fonction est en quelque sorte le main qui va nous permettre d'ajouter le chemin du fichier """
 
     resultat = construire_base(chemin)
-
+    if resultat is None:
+        print('Personne non enregistrée')
+        return False
     base_json[resultat[0]] = resultat[1].tolist() #De array en liste
 
     # Sauvegarder : 

@@ -1195,6 +1195,8 @@ stoptraking.addEventListener('click',()=>{
     document.querySelector('#app-container').style.height='100vh'
     document.querySelectorAll('img').forEach(m=>{m.classList.remove('actifs')})
     namerechercher.value=''
+    document.getElementsByClassName('uploadbox-input')[0].value=''
+    document.querySelector('.uploadbox-preview').src=''
 })
 
 let traker = {} // On crée un objet pour pouvoir enregistrer les valeurs des gens 
@@ -1206,7 +1208,9 @@ function rechercher_par_nom(noms) {
     .split('+')
     .map(m => m.toLowerCase().trim())
     .filter(m => m.length > 0);
-
+    if( searching.length===0) return
+    // Une fois qu'il y a une données chercher par l'utilisateur, alors l'input file de recherche par image devient null 
+    
   const frametrouve = [];
   if (!donnees) return;
 
@@ -1240,15 +1244,63 @@ function rechercher_par_nom(noms) {
   });
 }
 
-
+namerechercher.addEventListener('input',()=>{
+    document.getElementsByClassName('uploadbox-input')[0].value==''
+    document.querySelector('.uploadbox-preview').src=''
+})
 
 // Maintenant, nous allons commencer par faire le tracking avec mode image 
 
-const input_image_track = document.getElementsByName('research-photo')[0]
+const input_image_track = document.querySelector('.uploadbox')
 const declencheur = document.querySelector('.mid-header-left-file')
+
 declencheur.addEventListener('click',()=>{
-    input_image_track.click()
+    input_image_track.style.display='block'
+    namerechercher.value=''
 })
+
+
+// On va initier la connexion avec websocket sur cette image 
+function trackerimage(){
+    const con = new WebSocket(`ws://${domain}/ws/tracking/`)
+    if (!traking) con.close()
+    image = document.getElementsByClassName('uploadbox-input')[0].files[0]
+    
+    con.onopen =() =>{
+        console.log('Connexion au mode tracking')
+        con.send(image)
+        console.log('image envoyé')
+    }
+    con.onmessage = (e)=>{
+        if (!traking) con.close()
+        if  (!document.getElementsByClassName('uploadbox-input')[0].value) con.close()
+        if (namerechercher.value) con.close() 
+        document.querySelectorAll(`img, video`)
+        .forEach(el => el.classList.remove('actifs')); // On remove les couleurs
+        const resultat = JSON.parse(e.data)
+        console.log(resultat)
+        if(resultat.length===0){ {console.log('Aucune personne trouvée')}; return }
+        // Ici, nous allons colorier la frame correspondate 
+        try{
+        const framename = resultat.resultat[1]
+        const name = resultat.resultat[0]
+        document.querySelectorAll(`img.${framename} , video.${framename}`).forEach(el=>{el.classList.add('actifs')}) // On colore la frame en vert
+        const temps = new Date()
+        updateroradd(framename,name,temps.toLocaleTimeString())
+    }
+    catch(e){
+        console.log("resultat est vide actuellement")
+    }
+}
+
+    con.onclose = ()=>{
+        console.log('Connexion coupé ')
+        document.getElementsByClassName('uploadbox-input')[0].value=''
+    }
+    con.onerror = (e)=>{
+        console.log(e)
+    }
+}
 
 
 /* =====================================
@@ -1292,7 +1344,131 @@ function ajouterPersonne( // Cette fonction permet d'ajouter une personne à la 
 /* =====================================
     TEST
 ===================================== */
+const uploadboxDropzone =
+document.querySelector(".uploadbox-dropzone");
 
+const uploadboxInput =
+document.querySelector(".uploadbox-input");
+
+const uploadboxPreview =
+document.querySelector(".uploadbox-preview");
+
+const uploadboxPlaceholder =
+document.querySelector(".uploadbox-placeholder");
+
+const uploadboxConfirm =
+document.querySelector(".uploadbox-confirm");
+
+const uploadboxCancel =
+document.querySelector(".uploadbox-cancel");
+
+let imageChoisie = null;
+
+
+function afficherImage(file){
+
+    if(!file || !file.type.startsWith("image/")){
+        return;
+    }
+
+    imageChoisie = file;
+
+    const reader = new FileReader();
+
+    reader.onload = e => {
+
+        uploadboxPreview.src = e.target.result;
+
+        uploadboxPreview.style.display = "block";
+
+        uploadboxPlaceholder.style.display = "none";
+
+        uploadboxConfirm.disabled = false;
+    };
+
+    reader.readAsDataURL(file);
+}
+
+
+uploadboxDropzone.addEventListener("click", () => {
+
+    uploadboxInput.click();
+
+});
+
+
+uploadboxInput.addEventListener("change", () => {
+
+    afficherImage(uploadboxInput.files[0]);
+
+});
+
+
+uploadboxDropzone.addEventListener("dragover", e => {
+
+    e.preventDefault();
+
+    uploadboxDropzone.classList.add("dragover");
+
+});
+
+
+uploadboxDropzone.addEventListener("dragleave", () => {
+
+    uploadboxDropzone.classList.remove("dragover");
+
+});
+
+
+uploadboxDropzone.addEventListener("drop", e => {
+
+    e.preventDefault();
+
+    uploadboxDropzone.classList.remove("dragover");
+
+    afficherImage(
+        e.dataTransfer.files[0]
+    );
+
+});
+
+
+uploadboxCancel.addEventListener("click", () => {
+
+    imageChoisie = null;
+
+    uploadboxInput.value = "";
+
+    uploadboxPreview.src = "";
+
+    uploadboxPreview.style.display = "none";
+
+    uploadboxPlaceholder.style.display = "block";
+
+    uploadboxConfirm.disabled = true;
+
+});
+
+
+uploadboxConfirm.addEventListener("click", () => {
+    trackerimage()
+    console.log(imageChoisie);
+    document
+    .querySelector(".uploadbox")
+    .style.display='none';
+
+});
+
+
+document
+.querySelector(".uploadbox-close")
+.addEventListener("click", () => {
+
+    document
+    .querySelector(".uploadbox")
+    .style.display='none';
+
+});
 
 
 
