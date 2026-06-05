@@ -4,4 +4,6 @@ db.sqlite3
 *.pyc
 .env
 .vscode/
-frontend/liveservor/media
+media/*
+choix_claude.html
+sauvegarder.py 
