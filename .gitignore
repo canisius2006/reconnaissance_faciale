@@ -4,7 +4,4 @@ db.sqlite3
 *.pyc
 .env
 .vscode/
-ownmodel/image/Arex
-ownmodel/image/Zoe
-ownmodel/image/Emris
-
+frontend/liveservor/media
