@@ -446,7 +446,6 @@ function sanitizeName(name) {
     .normalize("NFD")
     .trim()
     .replace(/[^\p{L}\s\-'\d_]/gu, '')
-    .replace(' ', '');
 }
 
 // ─────────────────────────────────────────────

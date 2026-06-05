@@ -77,7 +77,7 @@ DETECTION_EVERY  = 2
 MAX_AGE          = 5
 MIN_HITS         = 3
 IOU_THRESHOLD    = 0.15
-REINSPECT_DELAY  = 5.0
+REINSPECT_DELAY  = 1.5
 
 # ── ANTI-LATENCE #1 : limiter le débit d'envoi ────────────────────────────────
 # 15 fps suffit pour la reconnaissance — réduit CPU et taille de la file WebSocket
@@ -243,7 +243,9 @@ detector = cv2.FaceDetectorYN.create(
 
 attributid = 0 #
 
-live_embeddings = {} # Cet dictionnaire regroupe les embeddings de tout le monde en live 
+live_embeddings = {}          # Cet dictionnaire regroupe les embeddings de tout le monde en live
+live_embeddings_lock = threading.Lock()  # Protège les accès concurrents à live_embeddings
+DELAI_EXPIRATION = 5          # Secondes sans apparition avant de retirer une personne du dict
 # =============================================================
 # DÉTECTION / RECONNAISSANCE EN ARRIÈRE-PLAN
 # =============================================================
@@ -461,6 +463,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
         cap = cv2.VideoCapture(source)
         cap.grab()
+
         self.ret,taille_setting = cap.retrieve()
         
         hauteur, largeur,_ = taille_setting.shape
@@ -535,7 +538,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
                     cid = self.util.resoudre_id(tid)
 
-                    marge     = 20
+                    marge     = 30
                     x1_l      = max(0, x1 - marge)
                     y1_l      = max(0, y1 - marge)
                     x2_l      = min(frame.shape[1], x2 + marge)
@@ -588,15 +591,17 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                             nom, pct = entree[1], entree[2]
                             if nom == "INCONNU":
                                 label = f" INCONNU  "
-                                live_embeddings[f'{attributid}']=[self.framename,self.util.live_dictionnaire[cid][0]]
-                                attributid+=1 # Ici, notre variable est incrémenter 
+                                with live_embeddings_lock:
+                                    live_embeddings[f'{attributid}'] = [self.framename, self.util.live_dictionnaire[cid][0], time.time()]
+                                attributid += 1 # Ici, notre variable est incrémenter 
                             elif nom == "En cours d'Analyse":
                                 label = f" ..."
                             else:
                                 label = f" {nom} {round(np.random.uniform(0.8,0.98)*100,2)}%"
                                 color_css = '#{:02x}{:02x}{:02x}'.format(int(color[2]), int(color[1]), int(color[0]))
                                 base_personnes[nom] = [color_css]
-                                live_embeddings[nom]=[self.framename,self.util.live_dictionnaire[cid][0]] # Ici, j'enregistre l'embeddings avec le nom de la personne et le nom du framename(source) correspondant 
+                                with live_embeddings_lock:
+                                    live_embeddings[nom] = [self.framename, self.util.live_dictionnaire[cid][0], time.time()] # Ici, j'enregistre l'embeddings avec le nom de la personne et le nom du framename(source) correspondant 
                                 
                                 if nom not in self.liste_personne_reconnues:
                                     self.liste_personne_reconnues.add(nom)
@@ -712,7 +717,9 @@ class TrackingConsumer(AsyncWebsocketConsumer):
         if img is None:
             return []
 
-        visages = app_rec.get(img)
+        # run_in_executor évite de bloquer la boucle asyncio pendant le calcul InsightFace (CPU-intensif)
+        loop = asyncio.get_event_loop()
+        visages = await loop.run_in_executor(None, app_rec.get, img)
         if len(visages) != 1:
             return None
 
@@ -725,8 +732,9 @@ class TrackingConsumer(AsyncWebsocketConsumer):
     async def faire_comparaison(self,emb_inconnu):
             """Cette fonction nous permet de faire la comparaison de emb"""
             another_list = {} # En fait ce n'est pas vraiment une liste, c'est un dictionnaire  , de plus, il faut qu'il soit toujours vide au départ
-            if live_embeddings:another_list = copy.deepcopy(live_embeddings)
-            if len(another_list) ==0:return
+            with live_embeddings_lock:
+                if live_embeddings: another_list = copy.deepcopy(live_embeddings)
+            if len(another_list) ==0:return []
             
             SEUIL_COSINUS = 0.5
             liste_live_emb = [value[1] for value in another_list.values()]
@@ -759,7 +767,7 @@ class TrackingConsumer(AsyncWebsocketConsumer):
                         await self.send(result)
                     else:
                         await self.send(json.dumps({}))
-                    await asyncio.sleep(1,5)
+                    await asyncio.sleep(1.5)
             else:
                 result = json.dumps({'resultat':{},'type':'tracking'})
                 await self.send(result)
@@ -770,13 +778,20 @@ class TrackingConsumer(AsyncWebsocketConsumer):
             print('selftracking est false ici') 
             
     def remettreazero(self):
-        """CEtte fonction va nous permettre de mettre la base de donnees en temps réel à zéro"""
+        """Supprime du dict live_embeddings les personnes absentes depuis DELAI_EXPIRATION secondes.
+        Ne touche pas aux personnes encore présentes dans les frames."""
         global live_embeddings
         while True:
-            if self.tracking:
-                live_embeddings.clear()
-                live_embeddings = {}
-                time.sleep(1.5)
-            else:
-                self.close(4001,"La connexion s'est fermé")
-        
+            time.sleep(1.0)
+            if not self.tracking:
+                self.close(4001, "La connexion s'est fermé")
+                break
+            maintenant = time.time()
+            with live_embeddings_lock:
+                cles_a_supprimer = [
+                    nom for nom, valeur in live_embeddings.items()
+                    if maintenant - valeur[2] > DELAI_EXPIRATION
+                ]
+                for cle in cles_a_supprimer:
+                    del live_embeddings[cle]
+                    #print(f"[Tracking] '{cle}' retiré (absent depuis {DELAI_EXPIRATION}s)")

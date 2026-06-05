@@ -78,9 +78,9 @@ def presence(request):
     if request.method=='GET':
         date = request.GET.get('date')
         if date =='all':
-            liste = Reconnus.objects.all().values('source', 'nom', 'heure', 'date')
+            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'nom', 'heure', 'date')
         else:
-            liste = Reconnus.objects.filter(date=date).values('source','nom','heure','date')
+            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','nom','heure','date')
         liste = list(liste)
         for item in liste:
             if item['heure']:
@@ -94,12 +94,12 @@ def telecharger(request):
     if request.method=='GET':
         date = request.GET.get('date')
         if date=='all':
-            liste = Reconnus.objects.all().order_by('heure','date').values('source', 'nom', 'heure', 'date')
+            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'nom', 'heure', 'date')
             
             liste = list(liste)
             nom_fichier = 'Toute_les_listes_de_presences'+'.xlsx'
         else:
-            liste = Reconnus.objects.filter(date=date).order_by('heure','date').values('source','nom','heure','date')
+            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','nom','heure','date')
             liste = list(liste)
             nom_fichier = date.replace(':','_')+'.xlsx'
         for item in liste:

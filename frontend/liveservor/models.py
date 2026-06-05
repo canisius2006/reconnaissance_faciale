@@ -29,3 +29,5 @@ class Profile(models.Model):
 class Source(models.Model):
     """Cette classe nous permettra de pouvoir enregistrer les sources souvent utilisé par leurs utilisateurs et de se connecter"""
     url = models.CharField(max_length=39)
+    def __str__(self):
+        return self.url

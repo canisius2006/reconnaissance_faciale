@@ -871,19 +871,15 @@ function sanitizeName(name) {
 }
 
 async function checkLink(url) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000); // 3 secondes max
     try {
-
-        const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
-        // 'no-cors' est important pour éviter l'erreur de blocage 
-        // si le serveur ne renvoie pas d'en-tête CORS spécifique.
-        
-        // Si on arrive ici, le serveur a répondu (même avec une erreur 404).
-        // Note: avec 'no-cors', response.ok sera toujours false, 
-        // mais le fait qu'il n'y ait pas d'erreur réseau est un bon indicateur.
-        return true; 
+        await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: controller.signal });
+        return true;
     } catch (error) {
-    
         return false;
+    } finally {
+        clearTimeout(timer); // nettoyage du timer dans tous les cas
     }
 }
 
@@ -1122,6 +1118,7 @@ async function connexionautomatique() {
         
     } finally {
         _connexionEnCours = false; // libère le verrou dans tous les cas
+        console.log("J'ai déjà fini l'essai avec cette une source")
     }
     
 }
@@ -1486,7 +1483,21 @@ function updateroradd(sourcename,personne,heure){
     }
 }
 
+function serveurounon(){
+    // Cette fonction va me permettre de savoir si je suis sur l'ordinateur qui gère le serveur ou pas 
+    const host = window.location.hostname;
+    const tabe = document.querySelector('#tab-webcam')
+    if (host === 'localhost' || host === '127.0.0.1') {
+        console.log("Même PC que le serveur"); 
+    } else {
+        console.log("PC différent, IP du serveur :", host);
+        tabe.style.display = 'none' 
+    }
+}
 
+// Ici, je vais configurer le lien qui nous permet d'ajouter une personne dans la base de données pour que ça nous permet de pouvoir fermer la caméra avant d'aller sur la nouvelle page html 
+
+document.querySelector('.people_add').addEventListener('click',()=>{stopWebcam()})
 
     // ============================================================
     //  INIT
@@ -1494,9 +1505,10 @@ function updateroradd(sourcename,personne,heure){
     window.addEventListener('load', () => {
         // J'arrête la caméra au niveau de chrome d'abord 
         stopWebcam();
+        serveurounon()
         _rafraichirPanelMilieu();
         _rafraichirPanelGauche();
         AjouterPanelDroit()
-        setTimeout(()=>{ouvrirsourcefirst(incrementer(),'0')},500) // Cette fonction permet d'ouvrir la caméra d'abord
-        connexionlimite()
+        //setTimeout(()=>{ouvrirsourcefirst(incrementer(),'0')},500) // Cette fonction permet d'ouvrir la caméra d'abord
+        setTimeout(connexionlimite,1000)
     });
