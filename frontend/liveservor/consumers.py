@@ -89,6 +89,10 @@ INTERVALLE_FRAME = 1.0 / FPS_CIBLE
 JPEG_QUALITE     = 60
 ENCODE_PARAMS    = [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITE]
 
+# ── Timeout de sécurité pour "En cours d'Analyse" ─────────────────────────────
+# Si le thread d'analyse est mort silencieusement, on relance après ce délai
+ANALYSE_TIMEOUT  = 5.0
+
 
 # =============================================================
 # KALMAN FILTER PAR TRACK
@@ -241,11 +245,12 @@ detector = cv2.FaceDetectorYN.create(
 
 
 
-attributid = 0 #
+attributid = 0 # C'est la variable créer pour les inconnues 
+
 
 live_embeddings = {}          # Cet dictionnaire regroupe les embeddings de tout le monde en live
 live_embeddings_lock = threading.Lock()  # Protège les accès concurrents à live_embeddings
-DELAI_EXPIRATION = 5          # Secondes sans apparition avant de retirer une personne du dict
+DELAI_EXPIRATION = 2          # Secondes sans apparition avant de retirer une personne du dict
 # =============================================================
 # DÉTECTION / RECONNAISSANCE EN ARRIÈRE-PLAN
 # =============================================================
@@ -276,13 +281,16 @@ class Utilitaire():
         np.random.seed(tid * 7 + 13)
         return tuple(int(c) for c in np.random.randint(100, 255, 3))
 
+    # ── FIX #1 : charger_embeddings corrigé ───────────────────────────────────
+    # Avant : utilisait _last_modified et _cache comme variables locales (NameError)
+    # Après : utilise correctement self.cache et self.last_modified
     def charger_embeddings(self,chemin):
-        self.mtime = os.path.getmtime(chemin)
-        if self.cache is None or self.mtime > _last_modified:
+        mtime = os.path.getmtime(chemin)
+        if self.cache is None or mtime > self.last_modified:
             with open(chemin, 'r') as f:
-                _cache = json.load(f)
-            _last_modified = self.mtime
-        return _cache
+                self.cache = json.load(f)
+            self.last_modified = mtime
+        return self.cache
 
     def resoudre_id(self,tid):
         """Retourne l'id canonique associé à tid (suit la chaîne de redirections)."""
@@ -306,6 +314,11 @@ class Utilitaire():
         self.base_json = self.charger_embeddings(chemin_base)
         self.liste_nom = np.array(list(self.base_json.keys()))
         self.liste_embedding = np.array(list(self.base_json.values()))
+        # ── FIX #2 : ajout d'un except pour capturer les erreurs silencieuses ─
+        # Avant : seul finally existait — toute exception tuait le thread sans
+        # jamais sortir du statut "En cours d'Analyse"
+        # Après : l'exception est loggée et le statut est remis à "INCONNU"
+        # pour permettre une relance via REINSPECT_DELAY
         try:
             visages = app_rec.get(img)
             if not visages:
@@ -348,6 +361,15 @@ class Utilitaire():
                         self.live_dictionnaire[cid][1] = "En cours d'Analyse"
                 self.identifier(cid)
 
+        except Exception as e:
+            print(f"[obtenir_embedding] ERREUR pour tid={tid} : {e}")
+            traceback.print_exc()
+            # Remettre le statut à INCONNU pour que REINSPECT_DELAY permette une relance
+            cid = self.resoudre_id(tid)
+            with self.dict_lock:
+                if cid in self.live_dictionnaire:
+                    self.live_dictionnaire[cid][1] = "INCONNU"
+                    self.live_dictionnaire[cid][3] = time.time()
         finally:
             with self.en_cours_lock:
                 self.en_cours.discard(tid)
@@ -551,7 +573,13 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                     if entree_cid is None:
                         besoin_thread = True
                     elif entree_cid[1] == "En cours d'Analyse":
-                        besoin_thread = False
+                        # ── FIX #3 : timeout de sécurité sur "En cours d'Analyse" ─
+                        # Avant : besoin_thread = False inconditionnellement
+                        # → si le thread mourait silencieusement, le statut restait
+                        #   bloqué sur "..." pour toujours
+                        # Après : on relance après ANALYSE_TIMEOUT secondes
+                        temps_ecoule  = time.time() - entree_cid[3]
+                        besoin_thread = temps_ecoule > ANALYSE_TIMEOUT
                     elif entree_cid[1] == "INCONNU":
                         temps_ecoule  = time.time() - entree_cid[3]
                         besoin_thread = temps_ecoule >= REINSPECT_DELAY
@@ -570,6 +598,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                                 with self.util.dict_lock:
                                     if cid in self.util.live_dictionnaire:
                                         self.util.live_dictionnaire[cid][1] = "En cours d'Analyse"
+                                        self.util.live_dictionnaire[cid][3] = time.time()
                                     else:
                                         self.util.live_dictionnaire[cid] = [None, "En cours d'Analyse", 0, time.time()]
 
@@ -747,6 +776,8 @@ class TrackingConsumer(AsyncWebsocketConsumer):
             #Maintenant, on va avoir le nom correspondant à la valeur maximale qu'on a obtenue
             if max_valeur>SEUIL_COSINUS:
                 nom_trouve = liste_live_nom[indice_max]
+                if nom_trouve.isdigit():
+                    nom_trouve = 'Tracké'
                 framename = liste_live_framename[indice_max]
                 return [str(nom_trouve),str(framename)]
             else:
