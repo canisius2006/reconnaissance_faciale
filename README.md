@@ -240,15 +240,13 @@ InsightFace nécessite un compilateur C++ pour compiler les extensions natives. 
 InsightFace refuse souvent d'installer sans compilateur C++.
 
 **Solution:** Installer **Visual Studio Build Tools** (gratuit)
-```bash
-# Télécharger depuis:
-# https://visualstudio.microsoft.com/downloads/
-# → "Tools for Visual Studio" → "Build Tools for Visual Studio"
+*
+#### **Télécharger depuis**:
+#### [https://visualstudio.microsoft.com/downloads/](https://visualstudio.microsoft.com/downloads/)
+#### "Tools for Visual Studio" → "Build Tools for Visual Studio"
 
-# Ou installer Visual Studio Community (plus complet)
-# https://visualstudio.microsoft.com/community/
-
-# Après installation, redémarrer et relancer pip install insightface
+#### Après installation, redémarrer et relancer pip install insightface
+```
 pip install insightface
 ```
 
@@ -378,10 +376,10 @@ app.prepare(ctx_id=-1, det_size=(160, 160))  # Plus petit que (320, 320)
 
 ### 3. Télécharger le modèle YuNet
 
-```bash
-# Placer ici : frontend/static/model/face_detection_yunet_2023mar.onnx
-# Source officielle :
-# https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
+
+#### Placer ici : frontend/static/model/face_detection_yunet_2023mar.onnx
+#### Source officielle :
+#### [https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
 ```
 
 ### 4. Télécharger InsightFace buffalo_l
@@ -566,4 +564,4 @@ Projet développé dans le cadre d'une journée de restitution de projet sur l'i
 
 ---
 
-*Modèle YuNet — OpenCV  · InsightFace buffalo_l (MIT)*
+*Contact: [canisiusnobre@gmail.com](mailto:canisiusnobre@gmail.com)*
