@@ -5,5 +5,5 @@ db.sqlite3
 .env
 .vscode/
 media/*
-choix_claude.html
+
 sauvegarder.py 
