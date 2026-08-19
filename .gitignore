@@ -5,6 +5,7 @@ db.sqlite3
 .env
 .vscode/
 media/*
+
 sauvegarder.py 
 migrations
 __pycache__
