@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}Dahsboard {% endblock title %}
 {% block head %}
-<link rel='stylesheet' href={% static "css/dashboard.css" %}>
+<link rel='stylesheet' href={% static "css/dashboard_2.css" %}>
 
 {% endblock head %}
 {% block body %}
@@ -88,6 +88,8 @@
     {% comment %} Ici pour l'affichage du div redimensionnable {% endcomment %}
 
 <div class="window" id="window" >
+
+    <div class="resizer-window" id="resizer3" title="Glisser pour redimensionner"></div>
 
     <div class="headers" id="headers">
 
@@ -310,6 +312,6 @@
     window.STATIC_URL = "{% static '' %}"; 
     {% comment %} J'aurai besoin du chemin des static {% endcomment %}
 </script>
-<script src={% static "js/dashboard.js" %}>
+<script src={% static "js/dashboard_1.js" %}>
 </script>
 {% endblock body %}

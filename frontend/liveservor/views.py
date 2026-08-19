@@ -35,7 +35,7 @@ def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer l
         base:dict = json.load(f)
     liste = list(base.keys())
         
-    return render(request,'dashboard.html',{'liste':liste})
+    return render(request,'dashboard_1.html',{'liste':liste})
 
 def reconnaissance_faciale_image(request:HttpRequest,name):
     """Pour pouvoir faire la reconnaissance pour l'image envoyé sous forme de requête post"""
