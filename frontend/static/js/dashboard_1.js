@@ -691,7 +691,7 @@ function AjouterPanelDroit() {
                 bouton.classList.add('confirmer')
                 bouton.innerHTML = oldbouton
                 bouton.disabled = false 
-                delete checker ; // Je ne veux pas avoir d'erreur bizarre après 
+                // delete checker ; // Je ne veux pas avoir d'erreur bizarre après 
             }
             
             
