@@ -16,6 +16,7 @@ import cv2, os, json
 from insightface.app import FaceAnalysis
 from tkinter import filedialog
 from pathlib import Path 
+from . import models 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 chemin_base = BASE_DIR/'static/model/embeddings.json'
