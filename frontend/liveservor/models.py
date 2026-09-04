@@ -16,14 +16,8 @@ class Profile(models.Model):
     user = models.ForeignKey(User,on_delete=models.CASCADE) 
     organization = models.OneToOneField(Organization,on_delete=models.CASCADE)
     photo = models.ImageField(upload_to='Profile/')
-    slug = models.SlugField(null=True,blank=True)
     bio = models.TextField(null=True,blank=True)
     info_sup = models.JSONField(default=list)
-    def save(self, *args, **kwargs):
-        # Génère le slug uniquement s'il n'est pas déjà renseigné
-        if not self.slug:
-            self.slug = slugify(f"{self.user.first_name} {self.user.last_name}")
-        super().save(*args, **kwargs)
 
 
 class Reconnus(models.Model):

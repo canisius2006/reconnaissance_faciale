@@ -16,7 +16,7 @@ class SourceAdmin(admin.ModelAdmin):
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ['user','organization','photo','slug','bio','info_sup']
+    list_display = ['user','organization','photo','bio','info_sup']
 
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
