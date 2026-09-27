@@ -5,7 +5,8 @@ db.sqlite3
 .env
 .vscode/
 media/*
-
+streaming/
 sauvegarder.py 
 migrations
 __pycache__
+.gitignore
