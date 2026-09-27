@@ -35,6 +35,7 @@ class Source(models.Model):
     organization = models.ForeignKey(Organization,on_delete=models.CASCADE)
     url = models.CharField(max_length=39,blank=True,null=True)
     is_actif = models.BooleanField(default=False)
+    is_open = models.BooleanField(default=True)
     is_webcam = models.BooleanField(default=False)
     info_sup = models.JSONField(default=list)
     def __str__(self):
