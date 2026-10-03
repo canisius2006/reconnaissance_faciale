@@ -1,4 +1,4 @@
- /* ============================================================
+/* ============================================================
            RESET & BASE
         ============================================================ */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -895,64 +895,200 @@
 
         /* Css caractéristiques pour ma fonction ajouter panel droit en js  */
 
+        /* Carte d'un cadre (panel droit) */
         .sndcontainer{
-            border-radius: 10px;
             width:100%;
             height:fit-content;
-            overflow:visible;
-            display: flex;
-            flex-direction: column;
-            justify-content:center;
-            gap:10px;
-            padding:10px;
-            margin-bottom: 20px;
-            margin-top:10px;
-            margin-left:auto;
-            margin-right:auto;
+            display:flex;
+            flex-direction:column;
+            margin:0 0 16px 0;
+            padding:0;
+            overflow:hidden;
+            background:#0f172a;
+            border:1px solid #1e293b;
+            border-radius:14px;
+            box-shadow:0 6px 18px rgba(0,0,0,.25);
         }
 
+        /* En-tête de la carte : aperçu du flux + nom du cadre */
         .trdcontainer{
-            border:2px solid rgba(255, 255, 255, 0.699);
-            border-radius: 10px;
-            width:100%;
-            height:auto;
-            overflow:visible;
-            display: flex;
-            flex-direction: row;
-            justify-content:space-between;
-            align-content: center;
-            gap:10px;
-            padding:10px;
+            display:flex;
+            flex-direction:row;
+            align-items:center;
+            gap:12px;
+            padding:12px;
+            background:linear-gradient(135deg,#111c33,#0f172a);
+            border-bottom:1px solid #1e293b;
         }
 
         .frameavatar{
-            border-radius: 50%;
-            height: 50px;
-            width:50px;
-            margin: auto;
-            align-content: center;
-            justify-content: center;
-            border:1px solid white;
+            width:52px;
+            height:52px;
+            flex-shrink:0;
+            object-fit:cover;
+            border-radius:12px;
+            border:1px solid #334155;
+            background:#020617;
         }
-        .divpersonnecontainer{
-            display:flex;
-            flex-direction: row;
-            justify-content: space-between;
-            width: 100%;
-            height:fit-content;
-            border-radius: 10px;
-            padding:5px;
-            /* gap:5px; */
-        }
-        .avatarpersonne{
-            border-radius: 50%;
-            height:20px;
-            width:20px;
-            object-fit: cover;
+        /* .actifs met 8px de bordure verte : trop épais pour une miniature */
+        .frameavatar.actifs{ border:3px solid green; }
 
+        .cadre-titre{
+            display:flex;
+            flex-direction:column;
+            gap:4px;
+            min-width:0;
         }
+
+        .cadre-sous{
+            display:flex;
+            align-items:center;
+            gap:6px;
+            font-size:11px;
+            color:#64748b;
+        }
+        .cadre-count{ color:#cbd5e1; font-weight:700; }
+
+        /* Liste des personnes reconnues */
+        .persons-list{
+            display:flex;
+            flex-direction:column;
+            gap:6px;
+            padding:10px;
+        }
+        .persons-list:empty::before{
+            content:"Aucune personne reconnue";
+            font-size:12px;
+            color:#475569;
+            text-align:center;
+            padding:8px 0;
+        }
+
+        .divpersonnecontainer{
+            --c:#64748b;
+            display:flex;
+            flex-direction:row;
+            align-items:center;
+            gap:10px;
+            width:100%;
+            padding:7px 10px;
+            border-radius:10px;
+            background:rgba(255,255,255,.03);
+            border:1px solid rgba(255,255,255,.05);
+            border-left:3px solid var(--c);
+            transition:background .15s ease, transform .15s ease;
+        }
+        .divpersonnecontainer:hover{
+            background:rgba(255,255,255,.07);
+            transform:translateX(2px);
+        }
+
+        .avatarpersonne{
+            width:32px;
+            height:32px;
+            flex-shrink:0;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            border-radius:50%;
+            overflow:hidden;
+            font-size:11px;
+            font-weight:700;
+            color:#fff;
+            background:color-mix(in srgb, var(--c) 30%, #0b0f1a);
+            border:2px solid var(--c);
+        }
+        .avatarpersonne img{
+            width:100%;
+            height:100%;
+            object-fit:cover;
+        }
+
+        .personne-pastille{
+            width:8px;
+            height:8px;
+            flex-shrink:0;
+            border-radius:50%;
+            background:var(--c);
+        }
+
         .infos{
-            font-size: large;
+            font-size:14px;
+            font-weight:600;
+            color:#e2e8f0;
+            white-space:nowrap;
+            overflow:hidden;
+            text-overflow:ellipsis;
+        }
+        .divpersonnecontainer .infos{
+            flex:1;
+            min-width:0;
+            font-size:13px;
+            font-weight:500;
+            color:#cbd5e1;
+        }
+
+        /* Bulle d'aperçu de l'image choisie (mode tracking par image) */
+        .preview-bubble{
+            position:fixed;
+            z-index:1000;
+            width:260px;
+            padding:8px;
+            background:#1e293b;
+            border:1px solid #334155;
+            border-radius:12px;
+            box-shadow:0 18px 40px rgba(0,0,0,.55);
+            opacity:0;
+            visibility:hidden;
+            pointer-events:none;
+            transform:translateY(-6px) scale(.97);
+            transform-origin:var(--fleche-x,50%) top;
+            transition:opacity .18s ease, transform .18s ease, visibility .18s;
+        }
+        .preview-bubble.visible{
+            opacity:1;
+            visibility:visible;
+            transform:none;
+        }
+        /* Pointe de la bulle, alignée sur le centre du bouton */
+        .preview-bubble::before{
+            content:"";
+            position:absolute;
+            top:-8px;
+            left:var(--fleche-x,50%);
+            width:14px;
+            height:14px;
+            margin-left:-7px;
+            background:#1e293b;
+            border-left:1px solid #334155;
+            border-top:1px solid #334155;
+            transform:rotate(45deg);
+        }
+        /* Variante : bulle à gauche de la liste de présence, pointe vers la droite */
+        .preview-bubble.a-gauche{
+            transform:translateX(8px) scale(.97);
+            transform-origin:right var(--fleche-y,50%);
+        }
+        .preview-bubble.a-gauche.visible{
+            transform:none;
+        }
+        .preview-bubble.a-gauche::before{
+            top:var(--fleche-y,50%);
+            left:auto;
+            right:-8px;
+            margin-left:0;
+            margin-top:-7px;
+            border-left:none;
+            border-top:1px solid #334155;
+            border-right:1px solid #334155;
+        }
+        .preview-bubble img{
+            display:block;
+            width:100%;
+            aspect-ratio:1 / 1;
+            object-fit:contain;
+            background:#0f172a;
+            border-radius:8px;
         }
 
         /* Css pour mon board de téléchargement  */
@@ -1163,6 +1299,25 @@
   background: rgba(239,68,68,0.1);
   color: #f87171;
   border: 1px solid rgba(248,113,113,0.15);
+}
+
+.avatar.avatar-photo {
+  cursor: zoom-in;
+  padding: 0;
+  overflow: hidden;
+  background: #0f172a;
+}
+.avatar.avatar-photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.badge-date {
+  color: #60a5fa;
+  background: rgba(59,130,246,0.1);
+  border: 1px solid rgba(96,165,250,0.2);
 }
 
 .row-info { flex: 1; min-width: 0; }
@@ -1729,5 +1884,3 @@ td{
 /* =====================================
     RESIZE HANDLE
 ===================================== */
-
-

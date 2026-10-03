@@ -8,7 +8,13 @@ import os
 from pathlib import Path
     #Intégration de la fonction pour créer un fichier xlx
     
-    
+def extract_full_name(username):
+    if not username or not username.strip():
+        raise ValueError("Le nom d'utilisateur ne peut pas être vide.")
+
+    return username.strip().replace("-", " ").title()
+
+
 def enregistrer_presence(liste
 ):
     """
@@ -39,7 +45,7 @@ def enregistrer_presence(liste
     # ==========================================================
     for element in liste:
         source = element['source']
-        nom_personne = element['nom']
+        nom_personne = extract_full_name(element['user__username'])
         heure = element['heure']
         date_presence = element['date']
 

@@ -36,6 +36,13 @@ def extract_username(full_name):
     return re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
 
 
+def extract_full_name(username):
+    if not username or not username.strip():
+        raise ValueError("Le nom d'utilisateur ne peut pas être vide.")
+
+    return username.strip().replace("-", " ").title()
+
+
 def accueil(request):
     return render(request,'accueil.html') 
 
@@ -85,7 +92,7 @@ def reconnaissance_faciale_image(request:HttpRequest,name):
             # 3. Création d'un objet ContentFile pour Django
             image_data = ContentFile(buffer.tobytes(),f'{nom}.jpg')
             
-            image = ImageTraite.objects.create(name_frame=name,image=image_data) #Ici, on crée un image dans le dossier traitement pour l'historique
+            image = ImageTraite.objects.create(frame_image=name,image=image_data) #Ici, on crée un image dans le dossier traitement pour l'historique
             
             #On accède au chemin de notre fichier 
             chemin = ImageTraite.objects.get(id=image.id).image.url
@@ -117,12 +124,12 @@ def telecharger(request):
     if request.method=='GET':
         date = request.GET.get('date')
         if date=='all':
-            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'nom', 'heure', 'date')
+            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'user__username', 'heure', 'date')
             
             liste = list(liste)
             nom_fichier = 'Toute_les_listes_de_presences'+'.xlsx'
         else:
-            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','nom','heure','date')
+            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','user__username','heure','date')
             liste = list(liste)
             nom_fichier = date.replace(':','_')+'.xlsx'
         for item in liste:

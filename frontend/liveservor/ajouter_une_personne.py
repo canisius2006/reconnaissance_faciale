@@ -13,7 +13,7 @@
 
 import numpy as np
 import cv2, os, json
-from insightface.app import FaceAnalysis
+from .insight import get_app_enrolement
 from tkinter import filedialog
 from pathlib import Path 
 from .models import Embedding 
@@ -39,11 +39,7 @@ def extract_username(full_name):
 
 # buffalo_l = grand modèle, plus précis que buffalo_sc
 # À utiliser ici car on fait ça une seule fois (pas en temps réel)
-app = FaceAnalysis(
-    name='buffalo_l',
-    providers=['CPUExecutionProvider']
-)
-app.prepare(ctx_id=-1)
+# Le modèle (det 640x640) n'est plus chargé à l'import mais au premier ajout d'une personne
 
 # ─────────────────────────────────────────────────────────────
 def get_embedding(chemin_photo):
@@ -55,7 +51,7 @@ def get_embedding(chemin_photo):
     if img is None:
         return None
 
-    visages = app.get(img)
+    visages = get_app_enrolement().get(img)
     if len(visages) != 1:
         return None
 
@@ -142,4 +138,4 @@ def ajouter(chemin):
     enregister_dans_la_base(base_json)
 
     print(f"\n Base de {len(base_json)} personnes sauvegardée")
-    return True 
+    return True

@@ -11,7 +11,7 @@
 
 import numpy as np
 import cv2, json
-from insightface.app import FaceAnalysis
+from .insight import get_app_rec
 from tkinter import filedialog 
 import tkinter
 import matplotlib.pyplot as plt
@@ -49,10 +49,8 @@ BASE_EMBEDDINGS = {nom: np.array(emb) for nom, emb in base_json.items()}
 # Initialiser InsightFace pour la détection en temps réel
 # buffalo_sc suffit pour la détection (on n'a pas besoin de buffalo_l
 # car l'embedding est déjà dans les attributs retournés)
-app_rec = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'],allowed_modules=['detection', 'recognition'])
-# Ne charger que le détecteur et le reconnaissance (embedding)
-
-app_rec.prepare(ctx_id=-1, det_size=(320,320))
+# Même instance que celle de consumers.py (une seule copie du modèle en mémoire)
+app_rec = get_app_rec()
 
 # Seuil de décision
 # 0.5 est une bonne valeur de départ

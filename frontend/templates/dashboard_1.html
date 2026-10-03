@@ -310,6 +310,7 @@
 
 <script>
     window.STATIC_URL = "{% static '' %}"; 
+    window.MEDIA_URL  = "{% get_media_prefix %}"; // Préfixe des photos de profil (MEDIA_URL)
     {% comment %} J'aurai besoin du chemin des static {% endcomment %}
 </script>
 <script src={% static "js/dashboard_1.js" %}>

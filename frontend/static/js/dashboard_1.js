@@ -1,4 +1,4 @@
- // ============================================================
+// ============================================================
     //  ÉTAT GLOBAL
     // ============================================================
     let currentMethod = 'url';
@@ -19,9 +19,90 @@
     let _nextMemberId = 1; // compteur auto pour les IDs
     let base_url = window.STATIC_URL // Chemin d'accès aux fichiers statiques 
 
-    let incrementation = 1
+    let nomAutoPropose = ''; // dernier nom proposé automatiquement dans le popup d'ajout
 
     let traking = false ; // Cette variable va nous permettre de savoir si le mode traking est lancé ou pas 
+
+    // ============================================================
+    //  UTILITAIRES — AFFICHAGE DES NOMS
+    //  "nobre-canisius" → "Nobre Canisius"  (affichage uniquement :
+    //  les clés internes / data-nom restent les noms bruts du serveur)
+    // ============================================================
+    function formatNom(brut) {
+        return String(brut ?? '')
+            .replace(/[-_]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .split(' ')
+            .map(m => m ? m.charAt(0).toUpperCase() + m.slice(1).toLowerCase() : m)
+            .join(' ');
+    }
+
+    // Clé de comparaison : insensible à la casse et au tiret / underscore
+    function cleNom(brut) {
+        return String(brut ?? '').toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+    }
+
+    function initialesNom(brut) {
+        return formatNom(brut).split(' ').filter(Boolean).map(m => m[0]).join('').toUpperCase().slice(0, 2) || '?';
+    }
+
+    function echapperHtml(s) {
+        return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // Construit l'URL d'une photo de profil à partir du chemin relatif renvoyé par le backend
+    function urlPhoto(chemin) {
+        if (!chemin) return '';
+        if (/^(https?:)?\/\//.test(chemin) || chemin.startsWith('/') || chemin.startsWith('data:')) return chemin;
+        const base = (window.MEDIA_URL || '/media/').replace(/\/?$/, '/');
+        return base + chemin;
+    }
+
+    // ============================================================
+    //  BULLE D'APERÇU DE PHOTO (partagée : tracking par image + liste de présence)
+    //  cote 'bas'    : sous l'élément, pointe vers le haut
+    //  cote 'gauche' : à gauche de la carte, pointe vers la droite (ne cache pas la suite)
+    // ============================================================
+    const bulleApercu = document.createElement('div')
+    bulleApercu.className = 'preview-bubble'
+    bulleApercu.innerHTML = '<img alt="Aperçu">'
+    document.body.appendChild(bulleApercu)
+    const bulleImg = bulleApercu.querySelector('img')
+
+    function montrerBulle(src, ancre, cote = 'bas') {
+        if (!src || !ancre) return
+        bulleImg.src = src
+        bulleApercu.classList.toggle('a-gauche', cote === 'gauche')
+        const marge = 8
+        const L = bulleApercu.offsetWidth
+        const H = bulleApercu.offsetHeight
+        const r = ancre.getBoundingClientRect()
+
+        if (cote === 'gauche') {
+            // À gauche de la carte de présence ; s'il n'y a pas la place, à gauche de la photo
+            const carte = ancre.closest('.card') || ancre
+            let gauche = carte.getBoundingClientRect().left - L - 14
+            if (gauche < marge) gauche = Math.max(marge, r.left - L - 14)
+            const centreY = r.top + r.height / 2
+            const haut = Math.max(marge, Math.min(centreY - H / 2, window.innerHeight - H - marge))
+            bulleApercu.style.left = gauche + 'px'
+            bulleApercu.style.top  = haut + 'px'
+            // La pointe reste alignée sur la photo survolée
+            bulleApercu.style.setProperty('--fleche-y', (centreY - haut) + 'px')
+        } else {
+            let gauche = r.left + r.width / 2 - L / 2
+            gauche = Math.max(marge, Math.min(gauche, window.innerWidth - L - marge))
+            bulleApercu.style.left = gauche + 'px'
+            bulleApercu.style.top  = (r.bottom + 12) + 'px'
+            bulleApercu.style.setProperty('--fleche-x', (r.left + r.width / 2 - gauche) + 'px')
+        }
+        bulleApercu.classList.add('visible')
+    }
+
+    function cacherBulle() {
+        bulleApercu.classList.remove('visible')
+    }
 
     // ============================================================
     //  FONCTIONS GLOBALES D'AJOUT
@@ -38,10 +119,78 @@ let oldbouton = bouton.innerHTML
 
 donnees = {} //Dictionnaire qui contient les framenames avec la source correspondantes ainsi que la liste des personnes 
 domain = window.location.host
+
+// ------------------------------------------------------------
+//  GESTION DES NOMS DE CADRES ET DES CONNEXIONS
+// ------------------------------------------------------------
+const sockets = {} // framename -> WebSocket actif (pour pouvoir le fermer proprement)
+
+// Un nom est "pris" s'il est en cours de connexion (listeframename) ou déjà affiché (allAvailableMembers).
+// Comparaison insensible à la casse.
+function nomsPris() {
+    const pris = new Set(listeframename.map(n => n.toLowerCase()))
+    allAvailableMembers.forEach(m => pris.add(m.framename.toLowerCase()))
+    return pris
+}
+
+function nomEstPris(nom) {
+    return nomsPris().has(String(nom).toLowerCase())
+}
+
+// Plus petit "Source_N" libre (réutilise les trous : si Source_2 est supprimée, elle redevient disponible)
+function incrementer() {
+    const pris = nomsPris()
+    let n = 1
+    while (pris.has('source_' + n)) n++
+    return 'Source_' + n
+}
+
+function fermerSocket(framename) {
+    const ws = sockets[framename]
+    delete sockets[framename] // les handlers de cette socket deviennent "périmés" et s'ignorent
+    if (ws) { try { ws.close(1000, 'cadre fermé') } catch (e) {} }
+    if (donnees[framename]) donnees[framename].liste = {} // plus personne à suivre sur ce cadre
+}
+
+// Libère complètement un nom : état, socket, carte du panel droit, panels gauche/milieu
+function nettoyerSource(framename) {
+    listeframename = listeframename.filter(m => m !== framename)
+    fermerSocket(framename)
+
+    const carte = document.querySelector(`.sndcontainer.${framename}`)
+    if (carte) carte.remove()
+
+    const membre = allAvailableMembers.find(m => m.framename === framename)
+    allAvailableMembers = allAvailableMembers.filter(m => m.framename !== framename)
+    if (membre) guildFamilies.forEach(f => { f.memberIds = f.memberIds.filter(mid => mid !== membre.id) })
+    guildFamilies = guildFamilies.filter(f => f.memberIds.length > 0)
+
+    _rafraichirPanelGauche()
+    _rafraichirPanelMilieu()
+    AjouterPanelDroit()
+}
+
+// Attend la première frame d'un cadre puis l'ajoute aux panels.
+// Si le cadre est supprimé entre-temps, ou qu'aucune frame n'arrive en 45 s,
+// on abandonne et on libère le nom (sinon il restait "pris" sans source visible).
+function attendrePremiereFrame(framename, source = 'url') {
+    const debut = Date.now()
+    const attendre = setInterval(() => {
+        if (!listeframename.includes(framename)) { clearInterval(attendre); return }
+        if (donnees[framename] && donnees[framename].src) {
+            clearInterval(attendre)
+            ajouterMembre({ framename, source, lien: donnees[framename].src })
+        } else if (Date.now() - debut > 45000) {
+            clearInterval(attendre)
+            nettoyerSource(framename)
+        }
+    }, 200)
+}
 function connectStream(framename,lien) {
     // Concernant le mode caméra, on va juste se concentrer sur le fait qu'il aura un lenght , le lien.lenght ==1
     chemin = `ws://${domain}/ws/video/${framename}`
     const ws = new WebSocket(chemin);
+    sockets[framename] = ws
     donnees[framename] = {} // On crée le diction pour framename
   ws.onopen = ()=>{
     data = {'type':'url','message':lien,'framename':framename}
@@ -55,6 +204,7 @@ function connectStream(framename,lien) {
   
 
   ws.onmessage = (e) => {
+    if (sockets[framename] !== ws) return // socket d'un cadre supprimé ou remplacé
     data = JSON.parse(e.data)
     if (data.type==='stoperror'){
         // Ici, ce sera comme pour dire si le lien s'est arrêté parce que le flux n'existe plus, il faut faire ceci 
@@ -107,6 +257,7 @@ function connectStream(framename,lien) {
   };
 
   ws.onclose = () => {
+   if (sockets[framename] !== ws) return // socket d'un cadre supprimé ou remplacé
    // ON met un photo à l'écran pour dire que le flux s'est coupé 
     donnees[framename].src = `${base_url}img/flux_stop.png`
     // Trouver l'img correspondante à ce framename et la mettre à jour
@@ -180,161 +331,121 @@ document.querySelector('.people_add').addEventListener('click',()=>{
      * @param {number} id
      */
     function supprimerMembre(id) {
-        
-        const todeleteframename = allAvailableMembers.filter(m  => m.id===id )
-        // Supprimer la liste d'affichage des noms 
-        document.querySelector(`.sndcontainer.${todeleteframename[0].framename}`).remove()
-
-        listeframename = listeframename.filter(m  => m!==todeleteframename[0].framename)  // Ceci me permet de supprimer framename si la fenêtre est parti ou a été supprimé 
-        
-        allAvailableMembers = allAvailableMembers.filter(m => m.id !== id);
-        
-        guildFamilies.forEach(f => {
-            f.memberIds = f.memberIds.filter(mid => mid !== id);
-            listeframename = listeframename.filter(fn => fn !== f.framename);
-        });
-        // Retire les familles vides
-        guildFamilies = guildFamilies.filter(f => f.memberIds.length > 0);
-
-        _rafraichirPanelGauche();
-        _rafraichirPanelMilieu();
-        AjouterPanelDroit()
+        const membre = allAvailableMembers.find(m => m.id === id)
+        if (!membre) return
+        nettoyerSource(membre.framename)
     }
 
+    // Supprime une fenêtre grâce au nom de la caméra (ex. fin des tentatives de reconnexion)
     function supprimermembrewithname(framename){
-        try{
-        //Cette fonction va nous permettre de pouvoir supprimer une fenêtre grâce au nom de la caméra 
-        document.querySelector(`.sndcontainer.${framename}`).remove() // Supprimer la liste d'affichage des noms 
-        listeframename = listeframename.filter(m  => m!==framename)  // Ceci me permet de supprimer framename si la fenêtre est parti ou a été supprimé 
-        monid = allAvailableMembers.filter(m => m.framename===framename )[0].id
-        allAvailableMembers = allAvailableMembers.filter(m => m.framename !== framename);
-        
-
-         guildFamilies.forEach(f => {
-            f.memberIds = f.memberIds.filter(mid => mid !== monid);
-            listeframename = listeframename.filter(fn => fn !== f.framename);
-        });
-        // Retire les familles vides
-        guildFamilies = guildFamilies.filter(f => f.memberIds.length > 0);
-
-        _rafraichirPanelGauche();
-        _rafraichirPanelMilieu();
-        AjouterPanelDroit()}
-        catch(e){
-
-        }
-
+        nettoyerSource(framename)
     }
 
     // ============================================================
     //  RENDU PANEL GAUCHE # Droite maintenant
     // ============================================================
 
-    function ajoutersurpaneldroit(framename, src, liste) {
-    if (!liste) return;
-    const container = document.getElementById('members-list-container');
+    // Avatar d'une personne reconnue : photo si disponible, sinon initiales.
+    // (Quand le backend enverra la photo pour ce panel, il suffira de passer son URL ici.)
+    function creerAvatarPersonne(nom, photo) {
+        const wrap = document.createElement('div')
+        wrap.classList.add('avatarpersonne')
+        const initiales = () => { wrap.textContent = initialesNom(nom) }
+        if (photo) {
+            const img = document.createElement('img')
+            img.src = urlPhoto(photo)
+            img.alt = formatNom(nom)
+            img.onerror = () => { img.remove(); initiales() }
+            wrap.appendChild(img)
+        } else {
+            initiales()
+        }
+        return wrap
+    }
 
-    if (!document.querySelector(`.sndcontainer.${framename}`)) {
+    // Crée la carte d'un cadre dans le panel droit (si elle n'existe pas encore)
+    function creerCarteCadre(framename, src) {
+        if (document.querySelector(`.sndcontainer.${framename}`)) return
+        const container = document.getElementById('members-list-container')
+
         const sndcontainer = document.createElement('div')
+        sndcontainer.classList.add('sndcontainer', framename)
+
         const trdcontainer = document.createElement('div')
-        const spannamme = document.createElement('span')
-        spannamme.classList.add('infos')
-        spannamme.textContent = framename
         trdcontainer.classList.add('trdcontainer')
-        sndcontainer.classList.add('sndcontainer', `${framename}`)
+
+        // IMPORTANT : la classe framename permet à connectStream() de rafraîchir
+        // cette image comme toutes les autres (img.${framename})
         const frameavatar = document.createElement('img')
-        frameavatar.classList.add('frameavatar')
+        frameavatar.classList.add('frameavatar', framename)
         frameavatar.src = src
-        trdcontainer.appendChild(frameavatar)
-        trdcontainer.appendChild(spannamme)
-        sndcontainer.appendChild(trdcontainer)
+
+        const titre = document.createElement('div')
+        titre.classList.add('cadre-titre')
+        const nomCadre = document.createElement('span')
+        nomCadre.classList.add('infos')
+        nomCadre.textContent = framename
+        const sous = document.createElement('span')
+        sous.classList.add('cadre-sous')
+        sous.innerHTML = `<span class="cadre-count">0</span> reconnue(s)`
+        titre.append(nomCadre, sous)
+
+        trdcontainer.append(frameavatar, titre)
+
+        const liste = document.createElement('div')
+        liste.classList.add('persons-list')
+
+        sndcontainer.append(trdcontainer, liste)
         container.appendChild(sndcontainer)
     }
 
-    const existant = []
+    // Synchronise les personnes reconnues d'un cadre (ajoute / retire sans tout reconstruire)
+    function synchroniserPersonnes(framename, liste) {
+        const carte = document.querySelector(`.sndcontainer.${framename}`)
+        if (!carte || !liste) return
+        const zone = carte.querySelector('.persons-list')
+        const existant = []
 
-    for (const [nom, couleur] of Object.entries(liste)) {
-        existant.push(nom)
-        // ✅ Utilise data-nom au lieu de la classe
-        if (!document.querySelector(`.sndcontainer.${framename} .divpersonnecontainer[data-nom="${CSS.escape(nom)}"]`)) {
-            const divpersonnecontainer = document.createElement('div')
-            const avatarpersonne = document.createElement('img')
-            avatarpersonne.src = `${STATIC_URL}img/live.png`
-            const infos = document.createElement('span')
-            divpersonnecontainer.style.border = `2px solid ${couleur}`
-            infos.textContent = nom
-            // ✅ data-nom à la place du nom en classe
-            divpersonnecontainer.classList.add('divpersonnecontainer')
-            divpersonnecontainer.dataset.nom = nom
-            avatarpersonne.classList.add('avatarpersonne')
-            infos.classList.add('infos')
-            divpersonnecontainer.append(avatarpersonne)
-            divpersonnecontainer.append(infos)
-            document.querySelector(`.sndcontainer.${framename}`).append(divpersonnecontainer)
+        for (const [nom, couleur] of Object.entries(liste)) {
+            existant.push(nom)
+            let ligne = Array.from(zone.children).find(el => el.dataset.nom === nom)
+            if (!ligne) {
+                ligne = document.createElement('div')
+                ligne.classList.add('divpersonnecontainer')
+                ligne.dataset.nom = nom
+                const infos = document.createElement('span')
+                infos.classList.add('infos')
+                infos.textContent = formatNom(nom)
+                const pastille = document.createElement('i')
+                pastille.classList.add('personne-pastille')
+                ligne.append(creerAvatarPersonne(nom), infos, pastille)
+                zone.appendChild(ligne)
+            }
+            ligne.style.setProperty('--c', couleur || '#64748b')
         }
+
+        Array.from(zone.children)
+            .filter(el => !existant.includes(el.dataset.nom))
+            .forEach(el => el.remove())
+
+        carte.querySelector('.cadre-count').textContent = zone.children.length
     }
 
-    const enfants = document.querySelectorAll(`.sndcontainer.${framename} .divpersonnecontainer`)
-    // ✅ Suppression correcte via data-nom
-    const absents = Array.from(enfants).filter(enfant => !existant.includes(enfant.dataset.nom))
-    absents.forEach(absent => absent.remove())
-}
+    function ajoutersurpaneldroit(framename, src, liste) {
+        if (!liste) return;
+        creerCarteCadre(framename, src)
+        synchroniserPersonnes(framename, liste)
+    }
 
+    function AjouterPanelDroit() {
+        listeframename.forEach(framename => {
+            if (!donnees[framename] || !donnees[framename].src) return // pas encore de frame
+            creerCarteCadre(framename, donnees[framename].src)
+            if (!donnees[framename].liste) return
+            synchroniserPersonnes(framename, donnees[framename].liste)
+        })
+    }
 
-function AjouterPanelDroit() {
-    listeframename.forEach(framename => {
-        const container = document.getElementById('members-list-container');
-
-        if (!document.querySelector(`.sndcontainer.${framename}`)) {
-            const sndcontainer = document.createElement('div')
-            const trdcontainer = document.createElement('div')
-            const spannamme = document.createElement('span')
-            spannamme.classList.add('infos')
-            spannamme.textContent = framename
-            trdcontainer.classList.add('trdcontainer')
-            sndcontainer.classList.add('sndcontainer', `${framename}`)
-            const frameavatar = document.createElement('img')
-            frameavatar.classList.add('frameavatar')
-            frameavatar.src = donnees[framename].src
-            trdcontainer.appendChild(frameavatar)
-            trdcontainer.appendChild(spannamme)
-            sndcontainer.appendChild(trdcontainer)
-            container.appendChild(sndcontainer)
-        }
-
-        if (!donnees[framename].liste) return
-
-        const existant = []
-        const liste_personnes = donnees[framename].liste
-
-        for (const [nom, couleur] of Object.entries(liste_personnes)) {
-            existant.push(nom)
-            // ✅ Utilise data-nom au lieu de la classe
-            if (!document.querySelector(`.sndcontainer.${framename} .divpersonnecontainer[data-nom="${CSS.escape(nom)}"]`)) {
-                const divpersonnecontainer = document.createElement('div')
-                const avatarpersonne = document.createElement('img')
-                avatarpersonne.src = `${STATIC_URL}img/live.png`
-                const infos = document.createElement('span')
-                divpersonnecontainer.style.border = `2px solid ${couleur}`
-                infos.textContent = nom
-                // ✅ data-nom à la place du nom en classe
-                divpersonnecontainer.classList.add('divpersonnecontainer')
-                divpersonnecontainer.dataset.nom = nom
-                avatarpersonne.classList.add('avatarpersonne')
-                infos.classList.add('infos')
-                divpersonnecontainer.append(avatarpersonne)
-                divpersonnecontainer.append(infos)
-                document.querySelector(`.sndcontainer.${framename}`).append(divpersonnecontainer)
-            }
-        }
-
-        const enfants = document.querySelectorAll(`.sndcontainer.${framename} .divpersonnecontainer`)
-        // ✅ Suppression correcte via data-nom
-        const absents = Array.from(enfants).filter(enfant => !existant.includes(enfant.dataset.nom))
-        absents.forEach(absent => absent.remove())
-    })
-}
-    
 
     // ============================================================
     //  RENDU PANEL MILIEU
@@ -530,6 +641,13 @@ function AjouterPanelDroit() {
         if (show) {
             popup.classList.add('montrer');
             feedback.innerText = '';
+            // Le popup est en display:none jusqu'à cet instant : on attend le rendu pour pouvoir
+            // donner le focus, puis on sélectionne le nom pour le remplacer en tapant directement.
+            const champ = document.getElementById('cam-name');
+            requestAnimationFrame(() => {
+                champ.focus({ preventScroll: true });
+                champ.select();
+            });
         } else {
             popup.classList.remove('montrer');
             stopWebcam();
@@ -655,16 +773,22 @@ function AjouterPanelDroit() {
     async function handleSubmit(event) {
         event.preventDefault();
         const feedback = document.getElementById('feedback-info');
-        const camName  = sanitizeName(document.getElementById('cam-name').value);
+        const champNom = document.getElementById('cam-name');
+        let camName    = sanitizeName(champNom.value);
+        // Le nom proposé automatiquement a pu être pris entre-temps (connexion auto) : on prend le suivant libre
+        if (champNom.value === nomAutoPropose && camName && nomEstPris(camName)) {
+            camName = incrementer();
+            champNom.value = camName;
+        }
 
         if (!camName) {
             feedback.style.color = '#ef4444';
             feedback.innerText   = "Veuillez entrer un nom pour la caméra.";
             return;
         }
-        if (listeframename.includes(camName)){
+        if (nomEstPris(camName)){
             feedback.style.color = '#ef4444';
-            feedback.innerText   = "Nom de frame déjà existant.";
+            feedback.innerText   = `Le nom « ${camName} » est déjà utilisé. Essayez « ${incrementer()} ».`;
             return;
         }
 
@@ -751,13 +875,7 @@ function AjouterPanelDroit() {
                         connectStream(cam,formobjet.urlVal)
 
                         // Attendre que la première frame arrive
-                        const attendre = setInterval(() => {
-                            if (donnees[cam] && donnees[cam].src) { 
-                                 
-                                clearInterval(attendre)
-                                ajouterMembre({ framename: cam, source: 'url', lien: donnees[cam].src })
-                            }
-                        }, 200)
+                        attendrePremiereFrame(cam, 'url')
 
                         listeframename.push(cam)
             }
@@ -773,12 +891,7 @@ function AjouterPanelDroit() {
                         connectStream(cam,'0')
 
                         // Attendre que la première frame arrive et aussi on va considérer que la caméra est un lien, parce que ça proviendra du serveur, le lien d'analyse 
-                        const attendre = setInterval(() => {
-                            if (donnees[cam] && donnees[cam].src) {   
-                                clearInterval(attendre)
-                                ajouterMembre({ framename: cam, source: 'url', lien: donnees[cam].src })
-                            }
-                        }, 200)
+                        attendrePremiereFrame(cam, 'url')
             }
 
 
@@ -870,27 +983,24 @@ function AjouterPanelDroit() {
     //  BOUTON AJOUTER SOURCE
     // ============================================================
     document.getElementById('btn-ajouter-source').addEventListener('click', () => {
-        document.getElementById('cam-name').value =incrementer()
-        document.getElementById('cam-name').addEventListener('focus',(e)=>{e.target.select()})
-        setTimeout(() => togglePopup(true), 100);
-        setTimeout(()=>{document.getElementById('cam-name').focus(),500})
-        
+        nomAutoPropose = incrementer()
+        document.getElementById('cam-name').value = nomAutoPropose
+        togglePopup(true)
     });
 
 
 
 function sanitizeName(name) {
-  // 1. .trim() enlève les espaces inutiles au début et à la fin
-  // 2. .replace() utilise une Regex pour ne garder que les caractères autorisés
-  // \p{L} : toutes les lettres de toutes les langues (Unicode)
-  // \s : espaces
-  // -' : tirets et apostrophes
-  
-  return name
-  .normalize("NFD")
+  // Le nom sert aussi de classe CSS (img.NomDuCadre) : il doit rester "sûr".
+  let n = String(name ?? '')
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')        // retire les accents
     .trim()
-    .replace(/[^\p{L}\s\-'\d_]/gu, '') // Remplace tout ce qui n'est pas autorisé par rien
-    .replace(' ',''); // Remplace l'espace par rien
+    .replace(/\s+/g, '')           // pas d'espaces
+    .replace(/[^\p{L}\d_-]/gu, '') // lettres, chiffres, _ et - uniquement (plus d'apostrophe)
+    .replace(/^-+/, '');           // ne commence pas par un tiret
+  if (/^\d/.test(n)) n = 'Source_' + n; // une classe CSS ne peut pas commencer par un chiffre
+  return n;
 }
 
 async function checkLink(url) {
@@ -905,16 +1015,6 @@ async function checkLink(url) {
         clearTimeout(timer); // nettoyage du timer dans tous les cas
     }
 }
-
-    function incrementer(){
-        // Cette fonction va me permettre de pouvoir donner de façon automatique un nom de frame pour notre source 
-        const imgs = document.querySelectorAll(`img.Source_${incrementation}`)
-        if (document.querySelectorAll('img').length===0) {incrementation=1} 
-        else if (imgs.length>0){incrementation = incrementation+1}
-        
-        return 'Source_'+incrementation
-    }
-
 
     // Les fonctions pour mon téléchargement de la liste excel des présents 
 
@@ -951,6 +1051,7 @@ function allerAujourdhui() {
 }
 
 function mettreAJour() {
+  cacherBulle();
   const d = new Date(input.value + 'T00:00:00');
   labelDate.textContent = `${!document.getElementById('cb1-6').checked ? formatDate(d):"Toutes les dates"}`;
   labelStats.textContent = '';
@@ -981,10 +1082,13 @@ function chargerPresence(dateStr) {
 }
 let personnes
 function afficherPresence(data) {
-  personnes = data.personnes || [];
-  const presents  = personnes.filter(p => p.present).length;
+  cacherBulle();
+  // Nouveau format : liste d'objets { source, user__username, heure, date, user__profile__photo }
+  personnes = Array.isArray(data) ? data : (data.personnes || data.liste || data.data || []);
+  const toutesDates = document.getElementById('cb1-6').checked;
 
-  labelStats.textContent = `${personnes.length} Personnes`
+  const uniques = new Set(personnes.map(p => p.user__username));
+  labelStats.textContent = `${uniques.size} ${uniques.size > 1 ? 'Personnes' : 'Personne'}`;
 
   if (personnes.length === 0) {
     listeContent.innerHTML = `
@@ -1000,19 +1104,24 @@ function afficherPresence(data) {
   }
 
   listeContent.innerHTML = personnes.map(p => {
-    const initiales = p.nom.split(' ').map(n => n[0]).join('').toUpperCase().slice(0,2);
-    const source       = p.source;
-    const heure     = p.heure ? `<span class="heure">${p.heure}</span>` : '';
+    const nom       = formatNom(p.user__username);
+    const initiales = initialesNom(p.user__username);
+    const photo     = urlPhoto(p.user__profile__photo);
+    const source    = echapperHtml(p.source ?? p.Source ?? '');
+    const heure     = p.heure ? `<span class="heure">${echapperHtml(p.heure)}</span>` : '';
+    const avatar    = photo
+      ? `<div class="avatar present avatar-photo"><img src="${echapperHtml(photo)}" alt="${echapperHtml(nom)}" loading="lazy" onerror="this.parentNode.classList.remove('avatar-photo');this.parentNode.textContent='${initiales}'"></div>`
+      : `<div class="avatar present">${initiales}</div>`;
     return `
-      <div class="row" title=${!document.getElementById('cb1-6').checked ? p.date:"Toutes les dates"}>
-        <div class="avatar present">${initiales}</div>
+      <div class="row" title="${toutesDates ? 'Toutes les dates' : echapperHtml(p.date)}">
+        ${avatar}
         <div class="row-info">
-          <div class="row-nom">${p.nom}</div>
+          <div class="row-nom">${echapperHtml(nom)}</div>
         </div>
         <div class="row-right">
           ${heure}
-          ${ document.getElementById('cb1-6').checked ? `<span class='badge' style='color:blue' >${p.date}</span>`:''}
-          <span class="badge ">${source}</span>
+          ${toutesDates ? `<span class="badge badge-date">${echapperHtml(p.date)}</span>` : ''}
+          <span class="badge">${source}</span>
         </div>
       </div>
     `;
@@ -1033,6 +1142,19 @@ function afficherErreur() {
     </div>
   `;
 }
+
+// Survol d'une photo dans la liste de présence : même bulle que le tracking, décalée à gauche
+listeContent.addEventListener('mouseover', e => {
+    const av = e.target.closest('.avatar-photo')
+    if (!av) return
+    const img = av.querySelector('img')
+    if (img) montrerBulle(img.currentSrc || img.src, av, 'gauche')
+})
+listeContent.addEventListener('mouseout', e => {
+    const av = e.target.closest('.avatar-photo')
+    if (av && !av.contains(e.relatedTarget)) cacherBulle()
+})
+listeContent.addEventListener('scroll', cacherBulle)
 
 document.querySelector('.date-picker-wrap').addEventListener('click',()=>{
     const a = document.querySelector('#date-input')
@@ -1056,6 +1178,7 @@ document.querySelector('.menu-t').addEventListener('click',()=>{
 document.querySelector('.overlay').addEventListener('click',(e)=>{
     if (e.target==document.querySelector('.overlay')){
         document.querySelector('.overlay').style.display='none';
+        cacherBulle();
         document.getElementById('cb1-6').checked = false
        
     }
@@ -1081,12 +1204,7 @@ function ouvrirsourcefirst(framename,url){
     connectStream(framename,url)
 
     // Attendre que la première frame arrive et aussi on va considérer que la caméra est un lien, parce que ça proviendra du serveur, le lien d'analyse 
-    const attendre = setInterval(() => {
-        if (donnees[framename] && donnees[framename].src) {   
-            clearInterval(attendre)
-            ajouterMembre({ framename: framename, source: 'url', lien: donnees[framename].src })
-        }
-    }, 200)
+    attendrePremiereFrame(framename, 'url')
 }
 
 
@@ -1217,6 +1335,8 @@ stoptraking.addEventListener('click',()=>{
     namerechercher.value=''
     document.getElementsByClassName('uploadbox-input')[0].value=''
     document.querySelector('.uploadbox-preview').src=''
+    televerser.src = ancienne_image
+    cacherBulle()
 })
 
 
@@ -1227,7 +1347,7 @@ function rechercher_par_nom(noms) {
   // Correction 1 — split + map + filter en une seule chaîne
   const searching = noms
     .split('+')
-    .map(m => m.toLowerCase().trim())
+    .map(m => cleNom(m))
     .filter(m => m.length > 0);
     if( searching.length===0) return
     // Une fois qu'il y a une données chercher par l'utilisateur, alors l'input file de recherche par image devient null 
@@ -1239,7 +1359,7 @@ function rechercher_par_nom(noms) {
     document.querySelectorAll(`img.${key}, video.${key}`)
       .forEach(el => el.classList.remove('actifs'));
 
-    const liste = Object.keys(value?.liste ?? {}).map(e => e.toLowerCase());
+    const liste = Object.keys(value?.liste ?? {}).map(e => cleNom(e));
 
     // Correction 2 — for...of au lieu de for...in
     for (const nom of searching) {
@@ -1268,6 +1388,8 @@ function rechercher_par_nom(noms) {
 namerechercher.addEventListener('input',()=>{
     document.getElementsByClassName('uploadbox-input')[0].value==''
     document.querySelector('.uploadbox-preview').src=''
+    televerser.src = ancienne_image
+    cacherBulle()
 })
 
 // Maintenant, nous allons commencer par faire le tracking avec mode image 
@@ -1351,12 +1473,12 @@ function ajouterPersonne( // Cette fonction permet d'ajouter une personne à la 
 
     const tr =
         document.createElement('tr');
-        tr.classList.add(...personne.split(/\s+/))
+        tr.dataset.nom = cleNom(personne)
 
     tr.innerHTML = `
-        <td>${sourcename}</td>
-        <td>${personne}</td>
-        <td>${heure}</td>
+        <td>${echapperHtml(sourcename)}</td>
+        <td>${echapperHtml(formatNom(personne))}</td>
+        <td>${echapperHtml(heure)}</td>
     `;
 
     tbody.prepend(tr);
@@ -1387,6 +1509,21 @@ const uploadboxCancel =
 document.querySelector(".uploadbox-cancel");
 
 let imageChoisie = null;
+
+// ------------------------------------------------------------
+//  Bulle d'aperçu de l'image choisie (survol du bouton de choix d'image)
+// ------------------------------------------------------------
+function imageChoisieActive(){
+    // Une image est "active" si elle a été confirmée (le bouton affiche alors l'image à la place de l'icône)
+    return !!document.querySelector('.uploadbox-preview').getAttribute('src') && televerser.src !== ancienne_image
+}
+
+televerser.addEventListener('mouseenter', () => {
+    if (imageChoisieActive()) montrerBulle(televerser.src, televerser, 'bas')
+})
+televerser.addEventListener('mouseleave', cacherBulle)
+televerser.addEventListener('click', cacherBulle)
+
 
 
 function afficherImage(file){
@@ -1504,9 +1641,10 @@ document
 
 function updateroradd(sourcename,personne,heure){
     if (traker.length===0)return
-    const ligne = document.querySelector(`tr.${personne.trim().replace(' ','.')}`)
+    const cle = cleNom(personne)
+    const ligne = Array.from(tbody.children).find(tr => tr.dataset.nom === cle)
     if (ligne){
-        
+        traker[personne] = traker[personne] || {}
         ligne.querySelectorAll('td')[0].textContent = traker[personne].source = sourcename
         ligne.querySelectorAll('td')[2].textContent = traker[personne].temps = heure
         tbody.prepend(ligne)
@@ -1541,6 +1679,8 @@ document.querySelector('.people_add').addEventListener('click',()=>{stopWebcam()
     //  INIT
     // ============================================================
     window.addEventListener('load', () => {
+        // Suggestions de recherche : noms sans tiret, avec majuscules
+        document.querySelectorAll('#suggestions option').forEach(o => { o.value = formatNom(o.value) });
         // J'arrête la caméra au niveau de chrome d'abord 
         stopWebcam();
         serveurounon()

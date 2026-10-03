@@ -31,7 +31,7 @@ from PIL import Image
 import cv2
 import numpy as np
 from filterpy.kalman import KalmanFilter
-from insightface.app import FaceAnalysis
+from .insight import get_app_rec
 from pathlib import Path
 from scipy.optimize import linear_sum_assignment
 
@@ -55,14 +55,18 @@ chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
 
 
 # ── InsightFace ────────────────────────────────────────────────────────────────
-app_rec = FaceAnalysis(
-    name='buffalo_l',
-    providers=['CPUExecutionProvider'],
-    allowed_modules=['detection', 'recognition']
-)
-app_rec.prepare(ctx_id=-1, det_size=(320, 320))
+# Instance partagée : une seule copie du modèle en mémoire pour tout le processus
+app_rec = get_app_rec()
 
 SEUIL_COSINUS = 0.5
+
+
+
+def extract_full_name(username):
+    if not username or not username.strip():
+        raise ValueError("Le nom d'utilisateur ne peut pas être vide.")
+
+    return username.strip().replace("-", " ").title()
 
 
 # =============================================================
@@ -233,14 +237,19 @@ class SORTTracker:
 cv2.setUseOptimized(True)
 cv2.setNumThreads(4)
 
-detector = cv2.FaceDetectorYN.create(
-    model=chemin_modele,
-    config="",
-    input_size=(FRAME_W, FRAME_H),
-    score_threshold=SCORE_THRESHOLD,
-    nms_threshold=NMS_THRESHOLD,
-    top_k=100
-)
+def creer_detecteur(taille=(FRAME_W, FRAME_H)):
+    """Un détecteur YuNet PAR caméra (Utilitaire).
+    Avant : un détecteur global partagé par toutes les caméras, dont la taille d'entrée
+    était réglée par la dernière caméra démarrée -> conflit dès que deux flux
+    n'avaient pas la même résolution."""
+    return cv2.FaceDetectorYN.create(
+        model=chemin_modele,
+        config="",
+        input_size=taille,
+        score_threshold=SCORE_THRESHOLD,
+        nms_threshold=NMS_THRESHOLD,
+        top_k=100
+    )
 
 
 
@@ -251,6 +260,18 @@ attributid = 0 # C'est la variable créer pour les inconnues
 live_embeddings = {}          # Cet dictionnaire regroupe les embeddings de tout le monde en live
 live_embeddings_lock = threading.Lock()  # Protège les accès concurrents à live_embeddings
 DELAI_EXPIRATION = 2          # Secondes sans apparition avant de retirer une personne du dict
+
+
+def nettoyer_live_embeddings():
+    """Retire de live_embeddings les entrées absentes depuis DELAI_EXPIRATION secondes.
+    Appelée par chaque flux vidéo (VideoStreamConsumer) ET par le mode tracking :
+    avant, seul le thread du TrackingConsumer nettoyait ce dict, donc sans tracking actif
+    chaque visage INCONNU ajoutait une entrée par frame, sans jamais être retirée."""
+    maintenant = time.time()
+    with live_embeddings_lock:
+        for cle in [nom for nom, valeur in live_embeddings.items()
+                    if maintenant - valeur[2] > DELAI_EXPIRATION]:
+            del live_embeddings[cle]
 # =============================================================
 # DÉTECTION / RECONNAISSANCE EN ARRIÈRE-PLAN
 # =============================================================
@@ -259,6 +280,8 @@ class Utilitaire():
     def __init__(self):
         self.tracker     = SORTTracker()
         self.frame_count = 0
+        self.detector    = creer_detecteur()
+        self.taille_detecteur = (FRAME_W, FRAME_H)
         self.live_dictionnaire = {}
         
         
@@ -277,6 +300,15 @@ class Utilitaire():
         self.liste_nom = [] 
         self.liste_embedding = []
         
+    def detecter(self, frame):
+        """Détection YuNet. La taille d'entrée est recalée sur la frame réelle
+        (elle peut changer en cours de flux, ex. WebRTC/LiveKit qui adapte la résolution)."""
+        h, w = frame.shape[:2]
+        if (w, h) != self.taille_detecteur:
+            self.detector.setInputSize((w, h))
+            self.taille_detecteur = (w, h)
+        return self.detector.detect(frame)
+
     def id_color(self,tid):
         np.random.seed(tid * 7 + 13)
         return tuple(int(c) for c in np.random.randint(100, 255, 3))
@@ -468,7 +500,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                     print(b)
                 self.streaming = True
                 
-                asyncio.sleep(1)
+
                 asyncio.create_task(self.live_serveur(self.source))
         
                 
@@ -484,19 +516,11 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
         # ── ANTI-LATENCE #4 : timestamp de la dernière frame envoyée ──────────
         _derniere_frame  = 0.0
+        _dernier_nettoyage = 0.0
 
         cap = cv2.VideoCapture(source)
-        cap.grab()
-
-        self.ret,taille_setting = cap.retrieve()
-        
-        hauteur, largeur,_ = taille_setting.shape
-        #Définir la taille d'entrée 
-        
-        detector.setInputSize((largeur,hauteur))
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, largeur)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, hauteur)
         cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
+        self.ret = cap.isOpened()
 
         while self.streaming:
             base_personnes  = {} #Liste des personnes sera plutôt un json qui contiendra des personnes en key et ensuite la couleur associée
@@ -511,45 +535,48 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                     await asyncio.sleep(temps_restant)
                 _derniere_frame = time.monotonic()
 
+                # Nettoyage de live_embeddings (au plus 1 fois par seconde)
+                if _derniere_frame - _dernier_nettoyage >= 1.0:
+                    nettoyer_live_embeddings()
+                    _dernier_nettoyage = _derniere_frame
+
                 # ── ANTI-LATENCE #3 : lire la frame la plus récente ───────────────
                 # _lire_frame_recente() vide le buffer avant de décoder -> zéro retard
                 self.ret, frame = await loop.run_in_executor(None, self.util._lire_frame_recente, cap)
                 
-                if not self.ret  :
-                    if self.nombre_essai <5:
-                        self.nombre_essai+=1
-                        data = {'type': 'stoperror'}
-                        await self.send(json.dumps(data))
+                if not self.ret:
+                    if not self.streaming:
+                        break
+                    if self.nombre_essai < 5:
+                        self.nombre_essai += 1
+                        await self.send(json.dumps({'type': 'stoperror'}))
                         print("données niveau stoperror envoyé ")
                         await asyncio.sleep(3)
-                        cap = await loop.run_in_executor(None,cv2.VideoCapture,self.source)
-                        await loop.run_in_executor(None,cap.grab)
-                        self.ret,taille_setting = await loop.run_in_executor(None,cap.retrieve)
-                        print("Je suis entrain de réessayer actuellement ") 
-                        #Donc j'attends un moment avant de commencer par faire quelque chose , et je relance pour voir si c'est disponible
-                    elif not self.streaming:
-                        self.close()
-                    else:
-                        data = {'type': 'fin'}
-                        await self.send(json.dumps(data))
-                        print(data)
-                        self.close(4000,'On a déjà essayé la reconnexion plusieurs fois')
+                        # On libère l'ancienne capture avant d'en rouvrir une
+                        await loop.run_in_executor(None, cap.release)
+                        cap = await loop.run_in_executor(None, cv2.VideoCapture, self.source)
+                        print("Je suis entrain de réessayer actuellement ")
+                        continue
+                    await self.send(json.dumps({'type': 'fin'}))
+                    await self.close(4000, 'On a déjà essayé la reconnexion plusieurs fois')
+                    break
                     
                 frame = cv2.flip(frame, 1)
+                h_frame, w_frame = frame.shape[:2]
                 self.util.frame_count += 1
 
                 detections = []
 
                 # --- Détection périodique ---
                 if self.util.frame_count % DETECTION_EVERY == 0:
-                    _, faces = detector.detect(frame)
+                    _, faces = self.util.detecter(frame)
                     if faces is not None:
                         for f in faces:
                             x, y, fw, fh = f[:4]
                             x1, y1 = int(x), int(y)
                             x2, y2 = int(x + fw), int(y + fh)
                             x1 = max(0, x1); y1 = max(0, y1)
-                            x2 = min(FRAME_W, x2); y2 = min(FRAME_H, y2)
+                            x2 = min(w_frame, x2); y2 = min(h_frame, y2)
                             detections.append((x1, y1, x2, y2))
 
                 # --- Mise à jour tracker ---
@@ -648,7 +675,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                         else:
                             label = f" ..."
 
-                        cv2.putText(frame, label, (x1, y1 - 8),
+                        cv2.putText(frame, extract_full_name(label), (x1, y1 - 8),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
                     except Exception as e:
                         print(e, "C'est l'erreur ça")
@@ -671,23 +698,9 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 await self.send(json.dumps(data))
                 
             except Exception as e:
-                if not self.ret and self.streaming :
-                    if self.nombre_essai <5 :
-                        self.nombre_essai+=1
-                        data = {'type': 'stoperror'}
-                        await self.send(json.dumps(data))
-                        print("données niveau stoperror envoyé ")
-                        await asyncio.sleep(3)
-                        cap = await loop.run_in_executor(None,cv2.VideoCapture,self.source)
-                        await loop.run_in_executor(None,cap.grab)
-                        self.ret,taille_setting = await loop.run_in_executor(None,cap.retrieve)
-                        print("Je suis entrain de réessayer actuellement ") 
-                        #Donc j'attends un moment avant de commencer par faire quelque chose , et je relance pour voir si c'est disponible
-                    elif not self.streaming:
-                        self.close()
-                    else:
-                        data = {'type': 'fin'}
-                        self.close(4000,'On a déjà essayé la reconnexion plusieurs fois')
+                print(f"[live_serveur] erreur sur {self.framename} : {e}")
+                traceback.print_exc()
+                await asyncio.sleep(0.5)
         cap.release()
             
             
@@ -701,12 +714,14 @@ class TrackingConsumer(AsyncWebsocketConsumer):
     """Cette classe va nous permettre de gérer le mode tracking"""
     async def connect(self):
         self.tracking = False 
+        self.actif = True # reste True tant que la connexion existe (sert à arrêter le thread de nettoyage)
         await self.accept()
         print('connexion accepté mode tracking')
         # Ici, on va commencer par faire la fonction remise à zéro en même temps 
         threading.Thread(target=self.remettreazero,daemon=True).start()
     async def disconnect(self, code):
         self.tracking = False 
+        self.actif = False
         print('Déconnexion au niveau du mode tracking')
     
     async def receive(self, text_data=None,bytes_data = None ):
@@ -734,7 +749,7 @@ class TrackingConsumer(AsyncWebsocketConsumer):
             message_type = data['type']
             if message_type =='stoptrack':
                 self.tracking = False 
-                self.close(4001,'connexion fermé sous demande du navigateur')
+                await self.close(4001,'connexion fermé sous demande du navigateur')
         if text_data is None:
             return 
             
@@ -808,24 +823,13 @@ class TrackingConsumer(AsyncWebsocketConsumer):
                 print('aucun embeddings détecté')
         else:
             await self.send(json.dumps({}))
-            self.close(4001,'Connexion fermé')
+            await self.close(4001,'Connexion fermé')
             print('selftracking est false ici') 
             
     def remettreazero(self):
-        """Supprime du dict live_embeddings les personnes absentes depuis DELAI_EXPIRATION secondes.
-        Ne touche pas aux personnes encore présentes dans les frames."""
-        global live_embeddings
-        while True:
+        """Nettoyage périodique de live_embeddings tant que la connexion tracking existe.
+        Thread synchrone : il ne peut pas faire `await self.close()`, il s'arrête
+        quand disconnect() met actif à False."""
+        while self.actif:
             time.sleep(1.0)
-            if not self.tracking:
-                self.close(4001, "La connexion s'est fermé")
-                break
-            maintenant = time.time()
-            with live_embeddings_lock:
-                cles_a_supprimer = [
-                    nom for nom, valeur in live_embeddings.items()
-                    if maintenant - valeur[2] > DELAI_EXPIRATION
-                ]
-                for cle in cles_a_supprimer:
-                    del live_embeddings[cle]
-                    #print(f"[Tracking] '{cle}' retiré (absent depuis {DELAI_EXPIRATION}s)")
+            nettoyer_live_embeddings()
