@@ -13,7 +13,7 @@ class Organization(models.Model):
 
 
 class Profile(models.Model):
-    user = models.ForeignKey(User,on_delete=models.CASCADE) 
+    user = models.OneToOneField(User,on_delete=models.CASCADE) 
     organization = models.OneToOneField(Organization,on_delete=models.CASCADE,blank=True,null=True)
     photo = models.ImageField(upload_to='Profile/')
     bio = models.TextField(null=True,blank=True)
