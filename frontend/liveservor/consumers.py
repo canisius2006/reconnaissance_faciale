@@ -32,6 +32,7 @@ import cv2
 import numpy as np
 from filterpy.kalman import KalmanFilter
 from .insight import get_app_rec
+from . import embeddings_cache
 from pathlib import Path
 from scipy.optimize import linear_sum_assignment
 
@@ -297,8 +298,6 @@ class Utilitaire():
         self.cache = None
         self.last_modified = 0
         
-        self.liste_nom = [] 
-        self.liste_embedding = []
         
     def detecter(self, frame):
         """Détection YuNet. La taille d'entrée est recalée sur la frame réelle
@@ -312,15 +311,6 @@ class Utilitaire():
     def id_color(self,tid):
         np.random.seed(tid * 7 + 13)
         return tuple(int(c) for c in np.random.randint(100, 255, 3))
-
-    # ── FIX #1 : charger_embeddings corrigé ───────────────────────────────────
-    # Avant : utilisait _last_modified et _cache comme variables locales (NameError)
-    # Après : utilise correctement self.cache et self.last_modified
-    def charger_embeddings(self):
-        return {
-            f"{embedding.user.username}":embedding.data 
-            for embedding in Embedding.objects.all()
-    }
 
     def resoudre_id(self,tid):
         """Retourne l'id canonique associé à tid (suit la chaîne de redirections)."""
@@ -341,19 +331,16 @@ class Utilitaire():
         - Si c'est une re-vérification d'un INCONNU -> met à jour l'embedding
         et relance l'identification.
         """
-        self.base_json = self.charger_embeddings()
-        self.liste_nom = np.array([
-                    embedding.user.username
-                    for embedding in Embedding.objects.all().order_by('id')
-                ])
-        #self.liste_nom = np.array(list(self.base_json.keys()))
-        self.liste_embedding = np.array(list(self.base_json.values()))
         # ── FIX #2 : ajout d'un except pour capturer les erreurs silencieuses ─
         # Avant : seul finally existait — toute exception tuait le thread sans
         # jamais sortir du statut "En cours d'Analyse"
         # Après : l'exception est loggée et le statut est remis à "INCONNU"
         # pour permettre une relance via REINSPECT_DELAY
         try:
+            # Embeddings de référence : cache partagé (plus aucune requête par visage),
+            # noms et matrice alignés, lus en un seul bloc.
+            noms, matrice = embeddings_cache.obtenir(fermer_connexion=True)
+
             visages = app_rec.get(img)
             if not visages:
                 cid = self.resoudre_id(tid)
@@ -393,7 +380,7 @@ class Utilitaire():
                     else:
                         self.live_dictionnaire[cid][0] = emb
                         self.live_dictionnaire[cid][1] = "En cours d'Analyse"
-                self.identifier(cid)
+                self.identifier(cid, noms, matrice)
 
         except Exception as e:
             print(f"[obtenir_embedding] ERREUR pour tid={tid} : {e}")
@@ -411,7 +398,7 @@ class Utilitaire():
 
         
     
-    def identifier(self,id_n):
+    def identifier(self, id_n, noms, matrice):
         """
         Identifie le visage via similarité cosinus sur la base de référence.
         Met à jour le timestamp [3] à chaque tentative, qu'elle réussisse ou non.
@@ -424,9 +411,13 @@ class Utilitaire():
         if emb is None:
             return
 
-        sims          = np.dot(self.liste_embedding, emb)
-        max_val       = float(np.max(sims))
-        nom_max       = self.liste_nom[int(np.argmax(sims))]
+        if matrice.shape[0] == 0:
+            # Aucune personne enregistrée : tout le monde est INCONNU (évite np.max sur un tableau vide)
+            max_val, nom_max = 0.0, "INCONNU"
+        else:
+            sims    = np.dot(matrice, emb)
+            max_val = float(np.max(sims))
+            nom_max = str(noms[int(np.argmax(sims))])
         nom_final     = nom_max if max_val >= SEUIL_COSINUS else "INCONNU"
         pour_debugger = nom_max
         pourcentage   = max_val * 100

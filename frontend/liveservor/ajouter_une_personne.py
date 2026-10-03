@@ -18,6 +18,7 @@ from tkinter import filedialog
 from pathlib import Path 
 from .models import Embedding 
 from django.contrib.auth.models import User
+from . import embeddings_cache
 import re,unicodedata 
 BASE_DIR = Path(__file__).resolve().parent.parent
 chemin_base = BASE_DIR/'static/model/embeddings.json'
@@ -61,14 +62,7 @@ def get_embedding(chemin_photo):
     # soit simplement un produit scalaire (plus rapide à calculer)
     return visages[0].normed_embedding  # shape : (512,)
 
-#---------------------Extraction du json à partir de la base de données------------
-try:
-    base_json = {
-        f"{embedding.user.username}":embedding.data 
-        for embedding in Embedding.objects.all()
-    }
-except:
-    base_json = {}
+# (Le dictionnaire base_json lu une fois à l'import a été supprimé : il était figé, donc périmé.)
 
 #Charger le modèle d'abord (ancienne méthode)
 # with open(chemin_base,'r') as f:
@@ -132,10 +126,10 @@ def ajouter(chemin):
     if resultat is None:
         print('Personne non enregistrée')
         return False
-    base_json[resultat[0]] = resultat[1].tolist() #De array en liste
+    # On n'enregistre QUE la personne ajoutée. Avant : tout base_json (figé à l'import) était
+    # réécrit à chaque ajout, donc une personne supprimée en admin était recréée.
+    enregister_dans_la_base({resultat[0]: resultat[1].tolist()}) #De array en liste
+    embeddings_cache.invalider() # La nouvelle personne est visible tout de suite (consumers + mode image)
 
-    # Sauvegarder : 
-    enregister_dans_la_base(base_json)
-
-    print(f"\n Base de {len(base_json)} personnes sauvegardée")
+    print(f"\n Base de {Embedding.objects.count()} personnes sauvegardée")
     return True

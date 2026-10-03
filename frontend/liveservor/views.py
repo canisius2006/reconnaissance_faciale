@@ -151,25 +151,34 @@ def ajouter(request:HttpRequest)->HttpResponse:
     """La vue pour pouvoir ajouter de nouveaux visages """
     if request.method == 'POST':
         photos = request.FILES.getlist('photos')
+        nom = (request.POST.get('nom') or '').strip()
+        if not nom:
+            return JsonResponse({'message':"Le nom est obligatoire",'status':400},status=400)
+        if not photos:
+            return JsonResponse({'message':"Ajoutez au moins une photo",'status':400},status=400)
         photo_de_profil = photos[0]
-        nom = request.POST.get('nom')
-        path = f'media/photos/{nom}'
         for photo in photos:
             default_storage.save(f'photos/{nom}/{photo.name}',photo)
-            
+
+        # Le dossier est calculé avec le MÊME stockage que celui qui vient d'enregistrer les photos
+        # (avant : 'media/photos/<nom>', relatif au dossier depuis lequel le serveur est lancé)
+        chemin = Path(default_storage.path(f'photos/{nom}'))
+
         #Après avoir fait ça , nous allons faire de l'ajout dans la base de données 
-        # Ce qui est primordial ici, c'est de pouvoir donner le chemin du dossier de la personne 
-        valeur = aj.ajouter(Path(path))
+        valeur = aj.ajouter(chemin)
         if valeur:
             #Je vais procéder à l'enregistrememt du nom de la personne dans ma base de données 
             username = extract_username(nom)
 
             user = User.objects.get_or_create(username=username)[0]
-            Profile.objects.update_or_create(user=user,photo=photo_de_profil)
+            photo_de_profil.seek(0) # le fichier a déjà été lu par default_storage.save
+            # La photo est dans defaults : avant, elle était dans le lookup, donc ré-ajouter
+            # une personne existante tentait de créer un 2e Profile (IntegrityError)
+            Profile.objects.update_or_create(user=user,defaults={'photo':photo_de_profil})
             return JsonResponse({'message':f'{nom} Ajouté dans la base de données avec succès','status':200})
 
         else:
-            return JsonResponse({})
+            return JsonResponse({'message':f"Aucun visage exploitable pour {nom} : utilisez des photos nettes avec un seul visage.",'status':400},status=400)
     return render(request,'ajouter.html')
 
 
@@ -180,5 +189,3 @@ def liste_source(request:HttpRequest)->JsonResponse:
     liste = list(liste)
     print(liste)
     return JsonResponse({'liste':liste})
-
-

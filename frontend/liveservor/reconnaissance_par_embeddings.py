@@ -16,7 +16,7 @@ from tkinter import filedialog
 import tkinter
 import matplotlib.pyplot as plt
 from pathlib import Path
-from .models import Embedding
+from . import embeddings_cache
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
@@ -25,26 +25,9 @@ chemin_base = BASE_DIR/'static/model/embeddings.json'
 base = chemin_base
 
 
-#------Charger la base d'embeddings nouvelle méthode 
-try:
-    base_json = {
-        f"{embedding.user.username}":embedding.data 
-        for embedding in Embedding.objects.all()
-    }
-except:
-    base_json = {}
-# Charger la base d'embeddings sauvegardée
-
-# with open(base, 'r') as f:
-#     base_json = json.load(f)
-
-
-#On aura besoin de numpy pour pouvoir faire des arrays afin de profiter de la puissance de numpy 
-liste_nom = np.array(list(base_json.keys()))
-liste_embedding = np.array(list(base_json.values()))
-
-# Reconvertir les listes en arrays numpy
-BASE_EMBEDDINGS = {nom: np.array(emb) for nom, emb in base_json.items()}
+# Les embeddings de référence viennent de embeddings_cache : ils sont rechargés dynamiquement
+# (avant : lus une seule fois à l'import, donc une personne ajoutée restait invisible
+# jusqu'au redémarrage du serveur).
 
 # Initialiser InsightFace pour la détection en temps réel
 # buffalo_sc suffit pour la détection (on n'a pas besoin de buffalo_l
@@ -80,12 +63,16 @@ def identifier(chemin_photo):
     score_min = 0.5
     # Prendre le visage avec le meilleur score de détection
     visages = [visage for visage in visages if visage.det_score>score_min]
+    liste_nom, liste_embedding = embeddings_cache.obtenir()
     for visage in visages:
         emb_inconnu = visage.normed_embedding
-        liste_calcul_similarite = np.dot(liste_embedding,emb_inconnu)
-        max_valeur = np.max(liste_calcul_similarite)
-        indice_max = np.argmax(liste_calcul_similarite) #Ceci nous permet de connaitre l'indice de la valeur maximale afin d'avoir le nom correspondant
-        nom_max = liste_nom [indice_max]
+        if len(liste_nom) == 0:
+            max_valeur, nom_max = 0.0, "INCONNU" # aucune personne enregistrée
+        else:
+            liste_calcul_similarite = np.dot(liste_embedding,emb_inconnu)
+            max_valeur = np.max(liste_calcul_similarite)
+            indice_max = np.argmax(liste_calcul_similarite) #Ceci nous permet de connaitre l'indice de la valeur maximale afin d'avoir le nom correspondant
+            nom_max = liste_nom [indice_max]
 
         # Décision selon le seuil
         if max_valeur >= SEUIL_COSINUS:
@@ -135,12 +122,16 @@ def identifier_serveur_image(img):
     score_min = 0.5
     # Prendre le visage avec le meilleur score de détection
     visages = [visage for visage in visages if visage.det_score>score_min]
+    liste_nom, liste_embedding = embeddings_cache.obtenir()
     for visage in visages:
         emb_inconnu = visage.normed_embedding
-        liste_calcul_similarite = np.dot(liste_embedding,emb_inconnu)
-        max_valeur = np.max(liste_calcul_similarite)
-        indice_max = np.argmax(liste_calcul_similarite) #Ceci nous permet de connaitre l'indice de la valeur maximale afin d'avoir le nom correspondant
-        nom_max = liste_nom [indice_max]
+        if len(liste_nom) == 0:
+            max_valeur, nom_max = 0.0, "INCONNU" # aucune personne enregistrée
+        else:
+            liste_calcul_similarite = np.dot(liste_embedding,emb_inconnu)
+            max_valeur = np.max(liste_calcul_similarite)
+            indice_max = np.argmax(liste_calcul_similarite) #Ceci nous permet de connaitre l'indice de la valeur maximale afin d'avoir le nom correspondant
+            nom_max = liste_nom [indice_max]
         #Conversion des np en normal, int et str 
         nom_max = str(nom_max)
         max_valeur = float(max_valeur)
