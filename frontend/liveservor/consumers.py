@@ -641,7 +641,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                                     print(timezone.now())
                                     print(value)
                                     if not value:
-                                        await sync_to_async(Reconnus.objects.create)(source=self.framename,nom=nom)
+                                        await sync_to_async(Reconnus.objects.create)(source=self.framename,user=user)
                                         #Pour pouvoir avoir ma liste sans doublon
                                         
                                 

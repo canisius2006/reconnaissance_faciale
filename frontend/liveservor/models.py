@@ -23,7 +23,7 @@ class Profile(models.Model):
 class Reconnus(models.Model):
     date = models.DateField(auto_now=True)
     source = models.CharField(max_length=25)
-    profil = models.ForeignKey(User,on_delete=models.CASCADE)
+    user = models.ForeignKey(User,on_delete=models.CASCADE)
     heure = models.TimeField(auto_now=True)
     info_sup = models.JSONField(default=list)
     def __str__(self):

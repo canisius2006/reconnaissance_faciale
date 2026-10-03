@@ -101,14 +101,14 @@ def presence(request):
     if request.method=='GET':
         date = request.GET.get('date')
         if date =='all':
-            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'profil__user__username', 'heure', 'date')
+            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'user__username', 'heure', 'date')
         else:
-            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','profil__user__username','heure','date')
+            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','user__username','heure','date')
         liste = list(liste)
         for item in liste:
             if item['heure']:
                 item['heure'] = item['heure'].strftime('%H:%M:%S')
-        
+    print(liste)
     return JsonResponse({'personnes':liste})
 
 

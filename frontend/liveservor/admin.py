@@ -8,7 +8,7 @@ class ImageTraiteAdmin(admin.ModelAdmin):
 
 @admin.register(Reconnus)
 class ReconnusAdmin(admin.ModelAdmin):
-    list_display = ['date','source','profil','heure','info_sup']
+    list_display = ['date','source','user','heure','info_sup']
 
 @admin.register(Source)
 class SourceAdmin(admin.ModelAdmin):
