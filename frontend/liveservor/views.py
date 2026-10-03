@@ -12,11 +12,29 @@ from django.core.files.base import ContentFile
 from .models import ImageTraite,Reconnus,Profile,Source
 from .creactionfichier import enregistrer_presence
 from django.core.files.storage import default_storage
+from .models import Embedding 
 from . import ajouter_une_personne as aj 
+from django.contrib.auth.models import User
+import re,unicodedata 
 # Create your views here.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-chemin_base = BASE_DIR/'static/model/embeddings.json'
+# chemin_base = BASE_DIR/'static/model/embeddings.json'
+
+
+def extract_username(full_name):
+    words = full_name.strip()
+
+    if not words:
+        raise ValueError("Le nom complet ne peut pas être vide.")
+    text = unicodedata.normalize("NFKD", words)
+    text = "".join(
+        char for char in text
+        if not unicodedata.combining(char)
+    )
+
+    return re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
+
 
 def accueil(request):
     return render(request,'accueil.html') 
@@ -31,8 +49,13 @@ def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer l
             url = request.POST.get('url')
             print(framename,url)
             return JsonResponse({'framename':framename,'url':url})
-    with open(chemin_base,'r') as f:
-        base:dict = json.load(f)
+    #Nouvelle méthode pour obtenir les embeddings 
+    base:dict = {
+        f"{embedding.user.username}":embedding.data 
+            for embedding in Embedding.objects.all()
+    }
+    # with open(chemin_base,'r') as f:
+    #     base:dict = json.load(f)
     liste = list(base.keys())
         
     return render(request,'dashboard_1.html',{'liste':liste})
@@ -78,9 +101,9 @@ def presence(request):
     if request.method=='GET':
         date = request.GET.get('date')
         if date =='all':
-            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'nom', 'heure', 'date')
+            liste = Reconnus.objects.all().order_by('-date','-heure').values('source', 'profil__user__username', 'heure', 'date')
         else:
-            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','nom','heure','date')
+            liste = Reconnus.objects.filter(date=date).order_by('-heure').values('source','profil__user__username','heure','date')
         liste = list(liste)
         for item in liste:
             if item['heure']:
@@ -132,7 +155,10 @@ def ajouter(request:HttpRequest)->HttpResponse:
         valeur = aj.ajouter(Path(path))
         if valeur:
             #Je vais procéder à l'enregistrememt du nom de la personne dans ma base de données 
-            Profile.objects.create(nom=nom,photo=photo_de_profil).save()
+            username = extract_username(nom)
+
+            user = User.objects.get_or_create(username=username)[0]
+            Profile.objects.update_or_create(user=user,photo=photo_de_profil)
             return JsonResponse({'message':f'{nom} Ajouté dans la base de données avec succès','status':200})
 
         else:

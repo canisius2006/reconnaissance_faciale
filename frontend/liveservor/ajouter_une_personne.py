@@ -16,10 +16,26 @@ import cv2, os, json
 from insightface.app import FaceAnalysis
 from tkinter import filedialog
 from pathlib import Path 
-
-
+from .models import Embedding 
+from django.contrib.auth.models import User
+import re,unicodedata 
 BASE_DIR = Path(__file__).resolve().parent.parent
 chemin_base = BASE_DIR/'static/model/embeddings.json'
+
+
+def extract_username(full_name):
+    words = full_name.strip()
+
+    if not words:
+        raise ValueError("Le nom complet ne peut pas être vide.")
+    text = unicodedata.normalize("NFKD", words)
+    text = "".join(
+        char for char in text
+        if not unicodedata.combining(char)
+    )
+
+    return re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
+
 
 # buffalo_l = grand modèle, plus précis que buffalo_sc
 # À utiliser ici car on fait ça une seule fois (pas en temps réel)
@@ -49,12 +65,18 @@ def get_embedding(chemin_photo):
     # soit simplement un produit scalaire (plus rapide à calculer)
     return visages[0].normed_embedding  # shape : (512,)
 
+#---------------------Extraction du json à partir de la base de données------------
+try:
+    base_json = {
+        f"{embedding.user.username}":embedding.data 
+        for embedding in Embedding.objects.all()
+    }
+except:
+    base_json = {}
 
-
-
-#Charger le modèle d'abord 
-with open(chemin_base,'r') as f:
-    base_json = json.load(f)
+#Charger le modèle d'abord (ancienne méthode)
+# with open(chemin_base,'r') as f:
+#     base_json = json.load(f)
 
 # ─────────────────────────────────────────────────────────────
 def construire_base(dossier_propre:Path):
@@ -86,6 +108,25 @@ def construire_base(dossier_propre:Path):
     print(f" {personne:25s} → {len(embeddings)} embeddings calculés")
     return dossier_propre.name, emb_moyen
 
+
+def enregister_dans_la_base(base_json: dict):
+    """Enregistre les données dans la base de données."""
+
+    for key, data in base_json.items():
+        username = extract_username(key)
+
+        user, _ = User.objects.get_or_create(
+            username=username
+        )
+
+        Embedding.objects.update_or_create(
+            user=user,
+            defaults={
+                "data": data
+            }
+        )
+
+
 #Charger et mettre à jour la base de données 
 
 def ajouter(chemin):
@@ -98,8 +139,7 @@ def ajouter(chemin):
     base_json[resultat[0]] = resultat[1].tolist() #De array en liste
 
     # Sauvegarder : 
-    with open(chemin_base, 'w') as f:
-        json.dump(base_json, f)
+    enregister_dans_la_base(base_json)
 
     print(f"\n Base de {len(base_json)} personnes sauvegardée")
     return True 

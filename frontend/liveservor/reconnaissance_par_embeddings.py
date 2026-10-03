@@ -16,6 +16,7 @@ from tkinter import filedialog
 import tkinter
 import matplotlib.pyplot as plt
 from pathlib import Path
+from .models import Embedding
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
@@ -23,10 +24,21 @@ chemin_base = BASE_DIR/'static/model/embeddings.json'
 
 base = chemin_base
 
+
+#------Charger la base d'embeddings nouvelle méthode 
+try:
+    base_json = {
+        f"{embedding.user.username}":embedding.data 
+        for embedding in Embedding.objects.all()
+    }
+except:
+    base_json = {}
 # Charger la base d'embeddings sauvegardée
 
-with open(base, 'r') as f:
-    base_json = json.load(f)
+# with open(base, 'r') as f:
+#     base_json = json.load(f)
+
+
 #On aura besoin de numpy pour pouvoir faire des arrays afin de profiter de la puissance de numpy 
 liste_nom = np.array(list(base_json.keys()))
 liste_embedding = np.array(list(base_json.values()))

@@ -42,8 +42,8 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Reconnus,Source
 from asgiref.sync import sync_to_async 
 from django.utils import timezone
-
-
+from .models import Embedding 
+from django.contrib.auth.models import User
 # =============================================================
 # CHEMINS
 # =============================================================
@@ -51,7 +51,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 #print(BASE_DIR)
 
 chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
-chemin_base = BASE_DIR/'static/model/embeddings.json'
+#chemin_base = BASE_DIR/'static/model/embeddings.json'
 
 
 # ── InsightFace ────────────────────────────────────────────────────────────────
@@ -284,13 +284,11 @@ class Utilitaire():
     # ── FIX #1 : charger_embeddings corrigé ───────────────────────────────────
     # Avant : utilisait _last_modified et _cache comme variables locales (NameError)
     # Après : utilise correctement self.cache et self.last_modified
-    def charger_embeddings(self,chemin):
-        mtime = os.path.getmtime(chemin)
-        if self.cache is None or mtime > self.last_modified:
-            with open(chemin, 'r') as f:
-                self.cache = json.load(f)
-            self.last_modified = mtime
-        return self.cache
+    def charger_embeddings(self):
+        return {
+            f"{embedding.user.username}":embedding.data 
+            for embedding in Embedding.objects.all()
+    }
 
     def resoudre_id(self,tid):
         """Retourne l'id canonique associé à tid (suit la chaîne de redirections)."""
@@ -311,8 +309,12 @@ class Utilitaire():
         - Si c'est une re-vérification d'un INCONNU -> met à jour l'embedding
         et relance l'identification.
         """
-        self.base_json = self.charger_embeddings(chemin_base)
-        self.liste_nom = np.array(list(self.base_json.keys()))
+        self.base_json = self.charger_embeddings()
+        self.liste_nom = np.array([
+                    embedding.user.username
+                    for embedding in Embedding.objects.all().order_by('id')
+                ])
+        #self.liste_nom = np.array(list(self.base_json.keys()))
         self.liste_embedding = np.array(list(self.base_json.values()))
         # ── FIX #2 : ajout d'un except pour capturer les erreurs silencieuses ─
         # Avant : seul finally existait — toute exception tuait le thread sans
@@ -634,7 +636,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                                 
                                 if nom not in self.liste_personne_reconnues:
                                     self.liste_personne_reconnues.add(nom)
-                                    value = await Reconnus.objects.filter(nom=nom,date=timezone.now().date()).aexists()
+                                    user = await sync_to_async(User.objects.get)(username=nom)
+                                    value = await Reconnus.objects.filter(user=user,date=timezone.now().date()).aexists()
                                     print(timezone.now())
                                     print(value)
                                     if not value:

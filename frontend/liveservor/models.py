@@ -14,7 +14,7 @@ class Organization(models.Model):
 
 class Profile(models.Model):
     user = models.ForeignKey(User,on_delete=models.CASCADE) 
-    organization = models.OneToOneField(Organization,on_delete=models.CASCADE)
+    organization = models.OneToOneField(Organization,on_delete=models.CASCADE,blank=True,null=True)
     photo = models.ImageField(upload_to='Profile/')
     bio = models.TextField(null=True,blank=True)
     info_sup = models.JSONField(default=list)
@@ -23,7 +23,7 @@ class Profile(models.Model):
 class Reconnus(models.Model):
     date = models.DateField(auto_now=True)
     source = models.CharField(max_length=25)
-    profil = models.ForeignKey(Profile,on_delete=models.CASCADE)
+    profil = models.ForeignKey(User,on_delete=models.CASCADE)
     heure = models.TimeField(auto_now=True)
     info_sup = models.JSONField(default=list)
     def __str__(self):
@@ -45,7 +45,7 @@ class Embedding(models.Model):
     user = models.OneToOneField(User,on_delete=models.CASCADE)
     data = models.JSONField(default=list)
     def __str__(self):
-        return self.user 
+        return self.user.username
 
 class ImageTraite(models.Model):
     source = models.ForeignKey(Source,null=True,blank=True,on_delete=models.CASCADE)
