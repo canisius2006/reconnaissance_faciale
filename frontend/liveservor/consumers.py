@@ -114,10 +114,14 @@ REINSPECT_DELAY  = 1.5
 # LIVENESS_SEUIL. Un consensus multi-frames plutôt qu'une décision sur une
 # seule image : une photo immobile échoue systématiquement sur la durée,
 # alors qu'un vrai visage mal cadré une fois ne suffit pas à le disqualifier.
-LIVENESS_EVERY        = DETECTION_EVERY  # recalculé à la même cadence que la détection YuNet
+LIVENESS_EVERY        = DETECTION_EVERY * 2  # best_model.onnx (float32) coûte plus cher que la
+# version quantifiée ; on l'interroge moins souvent. Le consensus sur fenêtre glissante lisse de
+# toute façon le résultat, donc perdre en fréquence ne perd pas grand-chose en fiabilité.
 LIVENESS_FENETRE       = 10
-LIVENESS_SEUIL         = 0.5    # seuil de probabilité "réel" (après softmax), valeur par défaut du dépôt
-LIVENESS_RATIO_MIN     = 0.7
+LIVENESS_SEUIL         = 0.65   # durci par rapport au 0.5 par défaut du dépôt : sur un vrai visage,
+# le score reste quasi systématiquement bien au-dessus de 0.65 (observé en test), donc on peut
+# se permettre d'être plus exigeant pour mieux rejeter les photos. À réajuster selon tes tests.
+LIVENESS_RATIO_MIN     = 0.75
 # ⚠️ INCERTAIN — à confirmer avec LIVENESS_DEBUG=True : l'indice de la classe
 # "réel" dans la sortie à 2 classes du modèle facenox n'est pas documenté noir
 # sur blanc dans le README (seules les classes "Real"/"Spoof" sont nommées, sans
@@ -356,7 +360,14 @@ def _charger_antispoof():
                   f"pas le vrai fichier modèle (pointeur Git LFS ?). Vivacité désactivée.")
             _antispoof_sessions = []
             return _antispoof_sessions
-        session = ort.InferenceSession(str(CHEMIN_ANTISPOOF), providers=['CPUExecutionProvider'])
+        # Limite les threads internes de CETTE session : sans ça, onnxruntime essaie d'utiliser
+        # tous les cœurs CPU disponibles pour un seul petit modèle, ce qui entre en concurrence
+        # avec YuNet et InsightFace qui tournent en parallèle. Un modèle aussi léger n'a pas
+        # besoin de multi-threading interne pour rester rapide.
+        opts = ort.SessionOptions()
+        opts.intra_op_num_threads = 1
+        opts.inter_op_num_threads = 1
+        session = ort.InferenceSession(str(CHEMIN_ANTISPOOF), sess_options=opts, providers=['CPUExecutionProvider'])
     except Exception as e:
         # Quelle que soit la raison (fichier corrompu, opset incompatible, etc.),
         # on désactive proprement la vivacité plutôt que de faire planter le flux vidéo.
