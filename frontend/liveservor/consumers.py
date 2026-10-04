@@ -118,10 +118,10 @@ LIVENESS_EVERY        = DETECTION_EVERY * 2  # best_model.onnx (float32) coûte 
 # version quantifiée ; on l'interroge moins souvent. Le consensus sur fenêtre glissante lisse de
 # toute façon le résultat, donc perdre en fréquence ne perd pas grand-chose en fiabilité.
 LIVENESS_FENETRE       = 10
-LIVENESS_SEUIL         = 0.65   # durci par rapport au 0.5 par défaut du dépôt : sur un vrai visage,
+LIVENESS_SEUIL         = 0.1   # durci par rapport au 0.5 par défaut du dépôt : sur un vrai visage,
 # le score reste quasi systématiquement bien au-dessus de 0.65 (observé en test), donc on peut
 # se permettre d'être plus exigeant pour mieux rejeter les photos. À réajuster selon tes tests.
-LIVENESS_RATIO_MIN     = 0.75
+LIVENESS_RATIO_MIN     = 0.7
 # ⚠️ INCERTAIN — à confirmer avec LIVENESS_DEBUG=True : l'indice de la classe
 # "réel" dans la sortie à 2 classes du modèle facenox n'est pas documenté noir
 # sur blanc dans le README (seules les classes "Real"/"Spoof" sont nommées, sans
