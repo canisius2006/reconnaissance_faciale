@@ -150,3 +150,7 @@ MEDIA_ROOT = BASE_DIR/'media'
 #STATIC_ROOT = BASE_DIR / 'static'  # ← c'est ça qui manque
 # L'URL publique pour accéder à ces fichiers via le navigateur
 MEDIA_URL = '/media/'
+
+
+LIVEKIT_API_KEY="devkey"
+LIVEKIT_API_SECRET="secret"
