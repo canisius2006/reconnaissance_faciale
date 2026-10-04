@@ -6,16 +6,30 @@
 =============================================================
 
 DÉPENDANCES :
-    pip install opencv-contrib-python numpy scipy filterpy
+    pip install opencv-contrib-python numpy scipy filterpy onnxruntime
 
 MODÈLE REQUIS :
     Télécharger : face_detection_yunet_2023mar.onnx
     Source : https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
 
+MODÈLE ANTI-SPOOFING (liveness, optionnel mais recommandé) :
+    face_antispoof.onnx — modèle facenox/face-antispoof-onnx (Apache-2.0),
+    https://github.com/facenox/face-antispoof-onnx, version quantifiée
+    recommandée (best_model_quantized.onnx, ~600 Ko, CPU rapide), renommée
+    et placée dans static/model/face_antispoof.onnx.
+    Si absent, la détection de vivacité est simplement désactivée (aucun crash),
+    tout le reste du pipeline continue de fonctionner normalement.
+    ⚠️ L'indice de la classe "réel" (LIVENESS_INDEX_REEL) n'est pas confirmé
+    par la documentation du dépôt — à calibrer avec LIVENESS_DEBUG=True (voir
+    la zone de configuration LIVENESS plus bas).
+
 NOUVEAUTÉ :
     - Re-vérification automatique des visages "INCONNU" toutes les REINSPECT_DELAY secondes.
     - La structure de live_dictionnaire passe de [emb, nom, pct]
       à [emb, nom, pct, timestamp_derniere_tentative].
+    - Détection de vivacité (anti-spoofing) par piste SORT : ne bloque JAMAIS la
+      reconnaissance, mais MARQUE chaque personne reconnue comme vivante ou non
+      (consensus sur plusieurs frames), exploitable côté front et en base (Reconnus.info_sup).
 """
 
 # ─── IMPORTS ──────────────────────────────────────────────────────────────────
@@ -30,6 +44,7 @@ import traceback
 from PIL import Image
 import cv2
 import numpy as np
+import onnxruntime as ort
 from filterpy.kalman import KalmanFilter
 from .insight import get_app_rec
 from . import embeddings_cache
@@ -53,6 +68,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
 #chemin_base = BASE_DIR/'static/model/embeddings.json'
+
+# ── Modèle anti-spoofing (liveness) ──────────────────────────────────────────
+# facenox/face-antispoof-onnx (Apache-2.0) — classifieur binaire Réel/Spoof,
+# un seul modèle (pas un ensemble), 600 Ko en version quantifiée, validé sur
+# CelebA Spoof (70k+ échantillons). Doc officielle du prétraitement :
+# https://github.com/facenox/face-antispoof-onnx (docs/DATA_PREPARATION.md, docs/LIMITATIONS.md)
+CHEMIN_ANTISPOOF   = BASE_DIR/'static/model/best_model.onnx'  # version non quantifiée (1.82 Mo), test de stabilité
+ANTISPOOF_PADDING  = 1.5   # agrandissement du carré centré sur le visage (valeur du dépôt)
+ANTISPOOF_TAILLE   = 128   # résolution d'entrée attendue par ce modèle
 
 
 # ── InsightFace ────────────────────────────────────────────────────────────────
@@ -83,6 +107,28 @@ MAX_AGE          = 5
 MIN_HITS         = 3
 IOU_THRESHOLD    = 0.15
 REINSPECT_DELAY  = 1.5
+
+# ── LIVENESS (anti-spoofing) ───────────────────────────────────────────────
+# Un visage est jugé "vivant" si, sur les LIVENESS_FENETRE derniers scores
+# calculés pour sa piste, au moins LIVENESS_RATIO_MIN d'entre eux dépassent
+# LIVENESS_SEUIL. Un consensus multi-frames plutôt qu'une décision sur une
+# seule image : une photo immobile échoue systématiquement sur la durée,
+# alors qu'un vrai visage mal cadré une fois ne suffit pas à le disqualifier.
+LIVENESS_EVERY        = DETECTION_EVERY  # recalculé à la même cadence que la détection YuNet
+LIVENESS_FENETRE       = 10
+LIVENESS_SEUIL         = 0.5    # seuil de probabilité "réel" (après softmax), valeur par défaut du dépôt
+LIVENESS_RATIO_MIN     = 0.7
+# ⚠️ INCERTAIN — à confirmer avec LIVENESS_DEBUG=True : l'indice de la classe
+# "réel" dans la sortie à 2 classes du modèle facenox n'est pas documenté noir
+# sur blanc dans le README (seules les classes "Real"/"Spoof" sont nommées, sans
+# préciser l'ordre). 0 est une supposition de départ — si les résultats sont
+# inversés (une vraie personne toujours jugée spoof), passer à 1.
+LIVENESS_INDEX_REEL    = 0
+# Mettre à True temporairement : affiche dans la console la sortie brute ET la
+# sortie après softmax pour chaque visage évalué, pour calibrer LIVENESS_INDEX_REEL
+# et vérifier que les valeurs ont un sens (proches de 0 ou 1, pas des logits bruts
+# disproportionnés). À repasser à False une fois calé.
+LIVENESS_DEBUG         = True
 
 # ── ANTI-LATENCE #1 : limiter le débit d'envoi ────────────────────────────────
 # 15 fps suffit pour la reconnaissance — réduit CPU et taille de la file WebSocket
@@ -274,6 +320,112 @@ def nettoyer_live_embeddings():
                     if maintenant - valeur[2] > DELAI_EXPIRATION]:
             del live_embeddings[cle]
 # =============================================================
+# ANTI-SPOOFING (LIVENESS) — MiniFASNet, chargé une seule fois pour tout le processus
+# =============================================================
+
+_antispoof_sessions = None  # None = pas encore tenté ; [] = tenté et absent ; [..] = chargé
+
+def _softmax(x):
+    """Convertit des logits bruts en probabilités (somme = 1). Si la sortie du
+    modèle est déjà une probabilité (ex: Softmax intégré au graphe ONNX), ça ne
+    change quasiment rien ; si ce sont des logits bruts, c'est indispensable
+    avant de comparer le résultat à un seuil comme LIVENESS_SEUIL."""
+    e = np.exp(x - np.max(x))
+    return e / e.sum()
+
+
+def _charger_antispoof():
+    """Charge le modèle facenox/face-antispoof-onnx une seule fois (comme app_rec
+    pour InsightFace). Si le fichier .onnx est absent, la vivacité est désactivée
+    sans faire planter le reste du pipeline : score_liveness() retourne toujours
+    None dans ce cas."""
+    global _antispoof_sessions
+    if _antispoof_sessions is not None:
+        return _antispoof_sessions
+    try:
+        if not CHEMIN_ANTISPOOF.exists():
+            print(f"[liveness] modèle absent : {CHEMIN_ANTISPOOF} — vivacité désactivée tant qu'il n'est pas téléchargé")
+            _antispoof_sessions = []
+            return _antispoof_sessions
+        # Piège fréquent : un fichier .onnx téléchargé via Git LFS sans le bon
+        # client ne contient qu'un pointeur texte de quelques centaines d'octets,
+        # pas le vrai modèle binaire -> ça se détecte ici avant d'aller plus loin.
+        taille = CHEMIN_ANTISPOOF.stat().st_size
+        if taille < 50_000:
+            print(f"[liveness] {CHEMIN_ANTISPOOF} fait seulement {taille} octets — ce n'est probablement "
+                  f"pas le vrai fichier modèle (pointeur Git LFS ?). Vivacité désactivée.")
+            _antispoof_sessions = []
+            return _antispoof_sessions
+        session = ort.InferenceSession(str(CHEMIN_ANTISPOOF), providers=['CPUExecutionProvider'])
+    except Exception as e:
+        # Quelle que soit la raison (fichier corrompu, opset incompatible, etc.),
+        # on désactive proprement la vivacité plutôt que de faire planter le flux vidéo.
+        print(f"[liveness] échec du chargement du modèle anti-spoofing : {e} — vivacité désactivée")
+        _antispoof_sessions = []
+        return _antispoof_sessions
+    _antispoof_sessions = [session]
+    print(f"[liveness] modèle anti-spoofing chargé ({CHEMIN_ANTISPOOF.name})")
+    return _antispoof_sessions
+
+
+def _recadrer_avec_marge(frame, bbox, padding_factor=ANTISPOOF_PADDING, taille=ANTISPOOF_TAILLE):
+    """Reproduit exactement le recadrage documenté par facenox/face-antispoof-onnx :
+    carré centré sur le visage, agrandi par padding_factor (1.5 par défaut),
+    puis redimensionné en taille x taille avec une interpolation adaptée au sens
+    du redimensionnement (évite le flou d'un agrandissement mal interpolé).
+    `bbox` = la boîte SERRÉE du visage (celle de SORT), sans marge d'affichage."""
+    x1, y1, x2, y2 = bbox
+    bw, bh = x2 - x1, y2 - y1
+    if bw <= 0 or bh <= 0:
+        return None
+    cx, cy = x1 + bw / 2, y1 + bh / 2
+    cote = max(bw, bh) * padding_factor
+    nx1 = int(max(0, cx - cote / 2))
+    ny1 = int(max(0, cy - cote / 2))
+    nx2 = int(min(frame.shape[1], cx + cote / 2))
+    ny2 = int(min(frame.shape[0], cy + cote / 2))
+    crop = frame[ny1:ny2, nx1:nx2]
+    if crop.size == 0:
+        return None
+    interp = cv2.INTER_LANCZOS4 if crop.shape[0] < taille else cv2.INTER_AREA
+    return cv2.resize(crop, (taille, taille), interpolation=interp)
+
+
+def score_liveness(frame, bbox, cid=None):
+    """Probabilité (0 = spoof, 1 = vrai visage) donnée par le modèle facenox.
+    Retourne None si le modèle est absent ou le recadrage impossible (à traiter
+    comme "indéterminé", jamais comme "spoof confirmé"). `cid` est optionnel,
+    uniquement pour identifier la piste dans les logs de debug."""
+    sessions = _charger_antispoof()
+    if not sessions or frame is None:
+        return None
+    try:
+        crop = _recadrer_avec_marge(frame, bbox)
+        if crop is None:
+            return None
+        # Le dépôt documente un entraînement en RGB ; OpenCV lit en BGR, conversion nécessaire.
+        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+        inp = crop_rgb.astype(np.float32) / 255.0
+        inp = np.transpose(inp, (2, 0, 1))[np.newaxis, ...]
+
+        session = sessions[0]
+        nom_entree = session.get_inputs()[0].name
+        out = session.run(None, {nom_entree: inp})[0][0]  # logits bruts, 2 classes
+        probas = _softmax(out)
+        s = float(probas[LIVENESS_INDEX_REEL])
+
+        if LIVENESS_DEBUG:
+            print(f"[liveness][debug][cid={cid}] bbox={bbox} "
+                  f"sortie brute={[round(float(v),3) for v in out]} "
+                  f"-> après softmax={[round(float(v),3) for v in probas]} "
+                  f"-> score classe {LIVENESS_INDEX_REEL} = {round(s,3)}")
+        return s
+    except Exception as e:
+        print(f"[liveness] erreur de scoring : {e}")
+        return None
+
+
+# =============================================================
 # DÉTECTION / RECONNAISSANCE EN ARRIÈRE-PLAN
 # =============================================================
 class Utilitaire():
@@ -297,6 +449,11 @@ class Utilitaire():
         #Les variables pour le rechargement de l'embeddings 
         self.cache = None
         self.last_modified = 0
+
+        # ── LIVENESS : historique de scores + dernier résultat connu, par cid ──
+        self.liveness_historique = {}   # {cid: [scores récents]}
+        self.liveness_dernier    = {}   # {cid: (vivant: bool|None, score: float|None)}
+        self.liveness_lock       = threading.Lock()
         
         
     def detecter(self, frame):
@@ -322,6 +479,53 @@ class Utilitaire():
                 cid = self.id_map[cid]
             return cid
 
+
+    def verifier_vivacite(self, cid, frame, bbox):
+        """
+        Calcule un score de vivacité pour ce visage (frame complète + bbox SERRÉ,
+        pas le crop margé utilisé pour l'affichage/la reconnaissance — chaque modèle
+        de l'ensemble recadre lui-même à sa propre échelle), l'ajoute à l'historique
+        de la piste `cid`, et retourne un consensus sur la fenêtre glissante.
+
+        Ne rejette JAMAIS rien elle-même : retourne juste un statut que l'appelant
+        choisit d'exploiter (affichage, enregistrement en base, alerte...).
+
+        Retour : (vivant, score)
+            vivant = True  -> consensus "vrai visage" sur la fenêtre
+            vivant = False -> consensus "spoof probable" sur la fenêtre
+            vivant = None  -> pas encore assez d'historique, ou modèles absents
+            score  = dernier score individuel calculé (None si non calculé)
+        """
+        score = score_liveness(frame, bbox, cid=cid)
+        if score is None:
+            # Modèles absents ou crop invalide : on ne se prononce pas,
+            # on ne touche pas à l'historique existant de cette piste.
+            with self.liveness_lock:
+                return self.liveness_dernier.get(cid, (None, None))
+
+        with self.liveness_lock:
+            historique = self.liveness_historique.setdefault(cid, [])
+            historique.append(score)
+            if len(historique) > LIVENESS_FENETRE:
+                historique.pop(0)
+
+            if len(historique) < LIVENESS_FENETRE:
+                resultat = (None, score)
+            else:
+                taux = sum(s >= LIVENESS_SEUIL for s in historique) / len(historique)
+                resultat = (taux >= LIVENESS_RATIO_MIN, score)
+
+            self.liveness_dernier[cid] = resultat
+            return resultat
+
+    def nettoyer_vivacite(self, cids_actifs):
+        """Retire l'historique de vivacité des pistes qui ne sont plus suivies
+        (appelé périodiquement depuis la boucle principale, pas à chaque frame)."""
+        with self.liveness_lock:
+            obsoletes = [c for c in self.liveness_historique if c not in cids_actifs]
+            for c in obsoletes:
+                self.liveness_historique.pop(c, None)
+                self.liveness_dernier.pop(c, None)
 
     def obtenir_embedding(self,tid, img: np.ndarray):
         """
@@ -529,6 +733,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 # Nettoyage de live_embeddings (au plus 1 fois par seconde)
                 if _derniere_frame - _dernier_nettoyage >= 1.0:
                     nettoyer_live_embeddings()
+                    cids_actifs = {self.util.resoudre_id(t.id) for t in self.util.tracker.tracks}
+                    self.util.nettoyer_vivacite(cids_actifs)
                     _dernier_nettoyage = _derniere_frame
 
                 # ── ANTI-LATENCE #3 : lire la frame la plus récente ───────────────
@@ -587,6 +793,23 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                     y2_l      = min(frame.shape[0], y2 + marge)
                     face_crop = frame[y1_l:y2_l, x1_l:x2_l]
 
+                    # ── LIVENESS : recalculé à la même cadence que la détection YuNet,
+                    # pas à chaque frame, pour limiter le coût CPU. Sur les frames
+                    # intermédiaires on réutilise le dernier résultat connu pour cette piste.
+                    try:
+                        if self.util.frame_count % LIVENESS_EVERY == 0:
+                            vivant, score_vivacite = await loop.run_in_executor(
+                                None, self.util.verifier_vivacite, cid, frame, (x1, y1, x2, y2)
+                            )
+                        else:
+                            with self.util.liveness_lock:
+                                vivant, score_vivacite = self.util.liveness_dernier.get(cid, (None, None))
+                    except Exception as e:
+                        # Défense en profondeur : quoi qu'il arrive côté vivacité, on ne doit
+                        # JAMAIS empêcher la reconnaissance normale de continuer à fonctionner.
+                        print(f"[liveness] erreur inattendue, ignorée : {e}")
+                        vivant, score_vivacite = None, None
+
                     with self.util.dict_lock:
                         entree_cid = self.util.live_dictionnaire.get(cid)
 
@@ -630,7 +853,10 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
                     cid   = self.util.resoudre_id(tid)
                     color = self.util.id_color(cid)
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                    # Rouge si le consensus de vivacité juge ce visage suspect (photo/écran) ;
+                    # la couleur normale de la piste sinon (y compris si indéterminé pour l'instant).
+                    color_boite = (0, 0, 255) if vivant is False else color
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color_boite, 2)
 
                     try:
                         with self.util.dict_lock:
@@ -646,9 +872,14 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                             elif nom == "En cours d'Analyse":
                                 label = f" ..."
                             else:
-                                label = f" {nom} {round(np.random.uniform(0.8,0.98)*100,2)}%"
+                                # ── LIVENESS : on NE REJETTE RIEN ici — on continue de reconnaître
+                                # et d'enregistrer la personne normalement, on ajoute juste un marqueur
+                                # exploitable (affichage + base de données) quand le consensus est négatif.
+                                suffixe_vivacite = " ⚠ NON-VIVANT" if vivant is False else ""
+                                label = f" {nom} {round(np.random.uniform(0.8,0.98)*100,2)}%{suffixe_vivacite}"
                                 color_css = '#{:02x}{:02x}{:02x}'.format(int(color[2]), int(color[1]), int(color[0]))
-                                base_personnes[nom] = [color_css]
+                                # vivant : True (vivant confirmé) / False (spoof suspecté) / None (indéterminé)
+                                base_personnes[nom] = [color_css, vivant]
                                 with live_embeddings_lock:
                                     live_embeddings[nom] = [self.framename, self.util.live_dictionnaire[cid][0], time.time()] # Ici, j'enregistre l'embeddings avec le nom de la personne et le nom du framename(source) correspondant 
                                 
@@ -659,7 +890,10 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                                     print(timezone.now())
                                     print(value)
                                     if not value:
-                                        await sync_to_async(Reconnus.objects.create)(source=self.framename,user=user)
+                                        await sync_to_async(Reconnus.objects.create)(
+                                            source=self.framename, user=user,
+                                            info_sup=[{'liveness_score': score_vivacite, 'is_real': vivant}],
+                                        )
                                         #Pour pouvoir avoir ma liste sans doublon
                                         
                                 

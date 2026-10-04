@@ -32,7 +32,7 @@ class Reconnus(models.Model):
     
 class Source(models.Model):
     """Cette classe nous permettra de pouvoir enregistrer les sources souvent utilisé par leurs utilisateurs et de se connecter"""
-    organization = models.ForeignKey(Organization,on_delete=models.CASCADE)
+    organization = models.ForeignKey(Organization,on_delete=models.CASCADE,null=True,blank=True)
     url = models.CharField(max_length=39,blank=True,null=True)
     is_actif = models.BooleanField(default=False)
     is_open = models.BooleanField(default=True)
