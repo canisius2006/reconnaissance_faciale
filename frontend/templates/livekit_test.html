@@ -1,0 +1,103 @@
+{% load static %}<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Test LiveKit (développement)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 760px; margin: 24px auto; padding: 0 12px; }
+  video { width: 100%; max-width: 640px; background: #111; border-radius: 6px; display: block; margin: 12px 0; }
+  button { padding: 8px 14px; margin-right: 6px; cursor: pointer; }
+  pre { background: #f4f4f4; padding: 8px; height: 190px; overflow: auto; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Test LiveKit <small style="font-size:14px;color:#888">(disponible seulement avec DEBUG = True)</small></h1>
+<p>Onglet 1 : « Publier ma caméra ». Onglet 2 (ou un autre poste) : « Voir cette caméra » avec le même nom.</p>
+{% csrf_token %}
+<p><label>Nom de la caméra <input id="cam" value="test"></label></p>
+<p>
+  <button id="btnPub">Publier ma caméra</button>
+  <button id="btnVoir">Voir cette caméra</button>
+  <button id="btnStop">Arrêter</button>
+</p>
+<video id="video" autoplay playsinline muted></video>
+<pre id="log"></pre>
+
+<script src="{% static 'js/livekit-client.umd.js' %}"></script>
+<script>
+const { Room, RoomEvent, Track } = LivekitClient;
+const camEl = document.getElementById('cam');
+const videoEl = document.getElementById('video');
+const logEl = document.getElementById('log');
+let room = null;
+
+function log(message) {
+  logEl.textContent += new Date().toLocaleTimeString() + '  ' + message + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function demanderToken(role) {
+  const fd = new FormData();
+  fd.append('cam', camEl.value);
+  fd.append('role', role);
+  fd.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+  const reponse = await fetch("{% url 'livekit_token' %}", { method: 'POST', body: fd });
+  const donnees = await reponse.json();
+  if (!reponse.ok) throw new Error(donnees.erreur || ('HTTP ' + reponse.status));
+  return donnees;
+}
+
+async function arreter() {
+  if (room) {
+    await room.disconnect();
+    room = null;
+    videoEl.srcObject = null;
+    log('déconnecté');
+  }
+}
+
+async function publier() {
+  await arreter();
+  if (!navigator.mediaDevices) {
+    log("Caméra indisponible : la page doit être ouverte en HTTPS ou sur localhost.");
+    return;
+  }
+  const infos = await demanderToken('publisher');
+  room = new Room();
+  room.on(RoomEvent.Disconnected, () => log('déconnecté du serveur'));
+  await room.connect(infos.url, infos.token);
+  log('connecté à la room « ' + infos.room + ' » comme ' + infos.identity);
+  await room.localParticipant.setCameraEnabled(true, { resolution: { width: 640, height: 480, frameRate: 15 } });
+  const publication = room.localParticipant.getTrackPublication(Track.Source.Camera);
+  if (publication && publication.track) publication.track.attach(videoEl);
+  log('caméra publiée');
+}
+
+async function voir() {
+  await arreter();
+  const infos = await demanderToken('viewer');
+  room = new Room();
+  room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    if (track.kind === Track.Kind.Video) {
+      track.attach(videoEl);
+      log('vidéo reçue de ' + participant.identity);
+    }
+  });
+  room.on(RoomEvent.TrackUnsubscribed, (track) => { track.detach(); log('vidéo arrêtée'); });
+  room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
+    log('données [' + (topic || '') + '] ' + new TextDecoder().decode(payload));
+  });
+  room.on(RoomEvent.Disconnected, () => log('déconnecté du serveur'));
+  await room.connect(infos.url, infos.token);
+  log('connecté à la room « ' + infos.room + ' » comme ' + infos.identity + ' (en attente de la vidéo)');
+}
+
+function action(fonction) {
+  return () => fonction().catch((e) => log('ERREUR : ' + e.message));
+}
+document.getElementById('btnPub').onclick = action(publier);
+document.getElementById('btnVoir').onclick = action(voir);
+document.getElementById('btnStop').onclick = action(arreter);
+</script>
+</body>
+</html>

@@ -12,9 +12,8 @@
 import numpy as np
 import cv2, json
 from .insight import get_app_rec
-from tkinter import filedialog 
-import tkinter
-import matplotlib.pyplot as plt
+# tkinter et matplotlib ne sont importés que dans identifier() et dans le bloc __main__ (outils de test local) :
+# sur un serveur Linux sans Tk, les importer ici empêchait Django de démarrer.
 from pathlib import Path
 from . import embeddings_cache
 
@@ -43,6 +42,7 @@ SEUIL_COSINUS = 0.5
 
 # ─────────────────────────────────────────────────────────────
 def identifier(chemin_photo):
+    import matplotlib.pyplot as plt # import local : outil de test, pas utilisé par le serveur
     """
     Identifie la personne sur une photo.
     Retourne (nom, similarité) ou ('INCONNU', similarité_max)
@@ -142,7 +142,7 @@ def identifier_serveur_image(img):
             couleur   = (0, 255, 0)
             couleur_css =  "#00FF00"
             print(f"Reconnu : {nom_final} | Similarité : {max_valeur:.3f}")
-            valeur = float(np.random.uniform(0.8,0.96))*100
+            valeur = max_valeur*100 # vraie similarité cosinus x 100 (avant : valeur inventée entre 80 et 96)
             personnes[nom_final] = [couleur_css] #Je répète nom_final parce que son format doit se rapporter à celui de listes personnes de websocket 
 
         else:
@@ -164,6 +164,8 @@ def identifier_serveur_image(img):
 if __name__=='__main__':
     # Tester
     print("Uploade une photo de test :")
+    import tkinter
+    from tkinter import filedialog
     root = tkinter.Tk()
     root.withdraw()
     uploaded =filedialog.askopenfilename()

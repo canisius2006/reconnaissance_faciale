@@ -1,5 +1,7 @@
 from django.shortcuts import render,redirect
-from django.http import HttpRequest,HttpResponse,JsonResponse,FileResponse
+from django.http import HttpRequest,HttpResponse,JsonResponse,FileResponse,Http404
+from django.views.decorators.http import require_POST
+from . import livekit_utils as lk
 import io 
 import numpy as np
 import cv2,time,json ,os
@@ -189,3 +191,33 @@ def liste_source(request:HttpRequest)->JsonResponse:
     liste = list(liste)
     print(liste)
     return JsonResponse({'liste':liste})
+
+
+# ───────────────────────── LiveKit ─────────────────────────
+
+@require_POST
+def livekit_token(request:HttpRequest)->JsonResponse:
+    """Délivre un token LiveKit. POST : cam=<nom de la caméra>, role=publisher|viewer.
+    Attention : pas encore d'authentification (comme le reste des vues) -> à ajouter avant la production,
+    sinon n'importe qui peut publier dans une room."""
+    role = request.POST.get('role', 'viewer')
+    cam = (request.POST.get('cam') or '').strip()
+    if role not in ('publisher', 'viewer'):
+        return JsonResponse({'erreur': "role doit valoir 'publisher' ou 'viewer'"}, status=400)
+    if not cam:
+        return JsonResponse({'erreur': "Le nom de la caméra est obligatoire"}, status=400)
+    try:
+        infos = lk.creer_token(role, cam)
+    except lk.LiveKitNonConfigure as e:
+        return JsonResponse({'erreur': str(e)}, status=503)
+    except ValueError as e:
+        return JsonResponse({'erreur': str(e)}, status=400)
+    infos['url'] = lk.url_publique(request)
+    return JsonResponse(infos)
+
+
+def livekit_test(request:HttpRequest)->HttpResponse:
+    """Page de test (publier / voir) : disponible seulement quand DEBUG est vrai."""
+    if not settings.DEBUG:
+        raise Http404
+    return render(request, 'livekit_test.html')

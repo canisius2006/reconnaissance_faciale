@@ -14,7 +14,6 @@
 import numpy as np
 import cv2, os, json
 from .insight import get_app_enrolement
-from tkinter import filedialog
 from pathlib import Path 
 from .models import Embedding 
 from django.contrib.auth.models import User

@@ -119,6 +119,8 @@ let oldbouton = bouton.innerHTML
 
 donnees = {} //Dictionnaire qui contient les framenames avec la source correspondantes ainsi que la liste des personnes 
 domain = window.location.host
+// ws:// sur une page HTTP, wss:// sur une page HTTPS (un navigateur bloque ws:// depuis une page HTTPS)
+const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws'
 
 // ------------------------------------------------------------
 //  GESTION DES NOMS DE CADRES ET DES CONNEXIONS
@@ -188,7 +190,7 @@ function attendrePremiereFrame(framename, source = 'url') {
 }
 function connectStream(framename,lien) {
     // Concernant le mode caméra, on va juste se concentrer sur le fait qu'il aura un lenght , le lien.lenght ==1
-    chemin = `ws://${domain}/ws/video/${framename}`
+    chemin = `${wsProto}://${domain}/ws/video/${framename}`
     const ws = new WebSocket(chemin);
     sockets[framename] = ws
     donnees[framename] = {} // On crée le diction pour framename
@@ -1405,7 +1407,7 @@ declencheur.addEventListener('click',()=>{
 
 // On va initier la connexion avec websocket sur cette image 
 function trackerimage(){
-    const con = new WebSocket(`ws://${domain}/ws/tracking/`)
+    const con = new WebSocket(`${wsProto}://${domain}/ws/tracking/`)
     if (!traking) con.close()
     image = document.getElementsByClassName('uploadbox-input')[0].files[0]
     
