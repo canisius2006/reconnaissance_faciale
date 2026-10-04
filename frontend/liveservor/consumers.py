@@ -33,15 +33,14 @@ NOUVEAUTÉ :
 """
 
 # ─── IMPORTS ──────────────────────────────────────────────────────────────────
-import asyncio,io
+import asyncio
 import base64,copy
 import json
-import math
-import os
+
 import threading
 import time
 import traceback
-from PIL import Image
+
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -51,14 +50,11 @@ from . import embeddings_cache
 from pathlib import Path
 from scipy.optimize import linear_sum_assignment
 
-import insightface
-import matplotlib.pyplot as plt
-
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Reconnus,Source
 from asgiref.sync import sync_to_async 
 from django.utils import timezone
-from .models import Embedding 
+
 from django.contrib.auth.models import User
 # =============================================================
 # CHEMINS
@@ -77,6 +73,16 @@ chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
 CHEMIN_ANTISPOOF   = BASE_DIR/'static/model/best_model.onnx'  # version non quantifiée (1.82 Mo), test de stabilité
 ANTISPOOF_PADDING  = 1.5   # agrandissement du carré centré sur le visage (valeur du dépôt)
 ANTISPOOF_TAILLE   = 128   # résolution d'entrée attendue par ce modèle
+
+# ── Correction d'éclairage (CLAHE) avant le modèle anti-spoofing ────────────
+# En basse lumière / fort bruit ISO (caméras DroidCam de qualité modeste,
+# pièces peu éclairées), la texture fine dont le modèle a besoin pour
+# distinguer un vrai visage d'une photo est en grande partie noyée dans le
+# bruit. CLAHE (égalisation d'histogramme adaptative) ravive le contraste
+# local SANS tout cramer, contrairement à une simple égalisation globale.
+ANTISPOOF_CLAHE_ACTIF        = True
+ANTISPOOF_CLAHE_CLIP_LIMIT   = 2.5   # plus haut = plus de contraste, mais plus de bruit amplifié aussi
+ANTISPOOF_CLAHE_TILE_GRID    = (8, 8)
 
 
 # ── InsightFace ────────────────────────────────────────────────────────────────
@@ -118,10 +124,10 @@ LIVENESS_EVERY        = DETECTION_EVERY * 2  # best_model.onnx (float32) coûte 
 # version quantifiée ; on l'interroge moins souvent. Le consensus sur fenêtre glissante lisse de
 # toute façon le résultat, donc perdre en fréquence ne perd pas grand-chose en fiabilité.
 LIVENESS_FENETRE       = 10
-LIVENESS_SEUIL         = 0.1   # durci par rapport au 0.5 par défaut du dépôt : sur un vrai visage,
+LIVENESS_SEUIL         = 0.65   # durci par rapport au 0.5 par défaut du dépôt : sur un vrai visage,
 # le score reste quasi systématiquement bien au-dessus de 0.65 (observé en test), donc on peut
 # se permettre d'être plus exigeant pour mieux rejeter les photos. À réajuster selon tes tests.
-LIVENESS_RATIO_MIN     = 0.7
+LIVENESS_RATIO_MIN     = 0.75
 # ⚠️ INCERTAIN — à confirmer avec LIVENESS_DEBUG=True : l'indice de la classe
 # "réel" dans la sortie à 2 classes du modèle facenox n'est pas documenté noir
 # sur blanc dans le README (seules les classes "Real"/"Spoof" sont nommées, sans
@@ -379,6 +385,18 @@ def _charger_antispoof():
     return _antispoof_sessions
 
 
+def _corriger_eclairage(crop_bgr):
+    """CLAHE appliqué uniquement sur le canal de luminance (espace LAB), pour
+    raviver le contraste local sans déformer les couleurs de peau — important
+    ici puisque le modèle a aussi appris sur la couleur, pas juste la forme."""
+    lab = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2LAB)
+    l, a, b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=ANTISPOOF_CLAHE_CLIP_LIMIT, tileGridSize=ANTISPOOF_CLAHE_TILE_GRID)
+    l_corrige = clahe.apply(l)
+    lab_corrige = cv2.merge((l_corrige, a, b))
+    return cv2.cvtColor(lab_corrige, cv2.COLOR_LAB2BGR)
+
+
 def _recadrer_avec_marge(frame, bbox, padding_factor=ANTISPOOF_PADDING, taille=ANTISPOOF_TAILLE):
     """Reproduit exactement le recadrage documenté par facenox/face-antispoof-onnx :
     carré centré sur le visage, agrandi par padding_factor (1.5 par défaut),
@@ -398,8 +416,20 @@ def _recadrer_avec_marge(frame, bbox, padding_factor=ANTISPOOF_PADDING, taille=A
     crop = frame[ny1:ny2, nx1:nx2]
     if crop.size == 0:
         return None
+    # Correction d'éclairage AVANT redimensionnement : sur l'image encore à sa
+    # résolution d'origine, il y a plus de détail réel à raviver qu'après coup
+    # sur une image déjà réduite à 128x128.
+    if ANTISPOOF_CLAHE_ACTIF:
+        crop = _corriger_eclairage(crop)
     interp = cv2.INTER_LANCZOS4 if crop.shape[0] < taille else cv2.INTER_AREA
     return cv2.resize(crop, (taille, taille), interpolation=interp)
+
+
+def liveness_disponible():
+    """True si le modèle anti-spoofing a été chargé avec succès. Sert à distinguer
+    "fonctionnalité désactivée" (modèle absent -> comportement d'avant, transparent)
+    de "pas encore confirmé" (modèle actif mais consensus pas encore formé)."""
+    return len(_charger_antispoof()) > 0
 
 
 def score_liveness(frame, bbox, cid=None):
@@ -730,6 +760,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
         while self.streaming:
             base_personnes  = {} #Liste des personnes sera plutôt un json qui contiendra des personnes en key et ensuite la couleur associée
+            vivacite_personnes = {} # Canal séparé : {nom: True/False/None} — n'affecte jamais `liste`, donc jamais le frontend existant
 
             try:   
                 # ── ANTI-LATENCE #4 : contrôle du débit ───────────────────────────
@@ -883,27 +914,49 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                             elif nom == "En cours d'Analyse":
                                 label = f" ..."
                             else:
-                                # ── LIVENESS : on NE REJETTE RIEN ici — on continue de reconnaître
-                                # et d'enregistrer la personne normalement, on ajoute juste un marqueur
-                                # exploitable (affichage + base de données) quand le consensus est négatif.
-                                suffixe_vivacite = " ⚠ NON-VIVANT" if vivant is False else ""
+                                # ── LIVENESS : l'affichage et la reconnaissance en direct restent
+                                # toujours visibles (même en cas de spoof suspecté) — seul
+                                # l'ENREGISTREMENT en base de présence est bloqué tant que la
+                                # vivacité n'est pas positivement confirmée.
+                                suffixe_vivacite = " (non confirmé)" if vivant is False else ""
                                 label = f" {nom} {round(np.random.uniform(0.8,0.98)*100,2)}%{suffixe_vivacite}"
                                 color_css = '#{:02x}{:02x}{:02x}'.format(int(color[2]), int(color[1]), int(color[0]))
-                                # vivant : True (vivant confirmé) / False (spoof suspecté) / None (indéterminé)
-                                base_personnes[nom] = [color_css, vivant]
+
+                                # Un spoof confirmé (vivant is False) n'apparaît PAS dans `liste` —
+                                # le nom n'est donc jamais envoyé au panel droit du frontend dans ce
+                                # cas. True ou None (pas encore confirmé) continuent d'apparaître
+                                # normalement, comme avant.
+                                if vivant is not False:
+                                    base_personnes[nom] = [color_css]
+
+                                # Canal séparé, indépendant de `liste`, pour ne jamais perturber le
+                                # frontend existant : vivant=True (confirmé) / False (spoof suspecté)
+                                # / None (indéterminé, pas encore assez de frames). Rempli dans tous
+                                # les cas (y compris spoof) : c'est le canal destiné à l'audit, pas à
+                                # l'affichage visible — voir discussion précédente.
+                                vivacite_personnes[nom] = vivant
+
                                 with live_embeddings_lock:
                                     live_embeddings[nom] = [self.framename, self.util.live_dictionnaire[cid][0], time.time()] # Ici, j'enregistre l'embeddings avec le nom de la personne et le nom du framename(source) correspondant 
-                                
-                                if nom not in self.liste_personne_reconnues:
+
+                                # Tant que la fonctionnalité liveness est active, il faut une
+                                # confirmation POSITIVE (vivant is True) avant d'enregistrer la
+                                # présence — pas juste l'absence de détection de spoof. Si le modèle
+                                # anti-spoofing est absent, on garde le comportement d'origine.
+                                peut_enregistrer = (not liveness_disponible()) or (vivant is True)
+
+                                if nom not in self.liste_personne_reconnues and peut_enregistrer:
                                     self.liste_personne_reconnues.add(nom)
                                     user = await sync_to_async(User.objects.get)(username=nom)
                                     value = await Reconnus.objects.filter(user=user,date=timezone.now().date()).aexists()
-                                    print(timezone.now())
-                                    print(value)
                                     if not value:
+                                        # Par construction (peut_enregistrer), score_vivacite n'est
+                                        # None que si liveness_disponible() est False — jamais quand
+                                        # vivant is True. round() protégé quand même, par prudence.
+                                        score_arrondi = round(score_vivacite, 3) if score_vivacite is not None else None
                                         await sync_to_async(Reconnus.objects.create)(
                                             source=self.framename, user=user,
-                                            info_sup=[{'liveness_score': score_vivacite, 'is_real': vivant}],
+                                            info_sup=[{'liveness_score': score_arrondi, 'is_real': vivant}],
                                         )
                                         #Pour pouvoir avoir ma liste sans doublon
                                         
@@ -929,7 +982,9 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 frame_b64 = base64.b64encode(buffer).decode('utf-8')
                 
                 
-                data = {'type': 'stream', 'message': frame_b64, 'liste': base_personnes}
+                # 'vivacite' est une clé EN PLUS, indépendante de 'liste' : le frontend actuel
+                # qui ne lit que 'liste' continue de fonctionner sans aucun changement.
+                data = {'type': 'stream', 'message': frame_b64, 'liste': base_personnes, 'vivacite': vivacite_personnes}
 
                 await self.send(json.dumps(data))
                 
