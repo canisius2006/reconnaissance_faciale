@@ -81,7 +81,7 @@ def reconnaissance_faciale_image(request:HttpRequest,name):
             
             image_traite,liste_personnes = rpe.identifier_serveur_image(img) #Retourne l'image sous forme de numpy et la liste des personnes détectées
             #Le nom n'est juste que l'heure à laquelle la photo a été traité 
-            nom = str(timezone.now())
+            nom = str(timezone.localtime().now())
             # file:///C:/projet_django/rf_projet/frontend/traitements/2026-05-22%2015:48:43.647347+00:00.jpg
             
             nom = name+'_'+nom.replace(' ','_').replace(':','_').replace('+','_').replace('-','_').replace('.','_')

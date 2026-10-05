@@ -1034,7 +1034,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                                 if nom not in self.liste_personne_reconnues and peut_enregistrer:
                                     self.liste_personne_reconnues.add(nom)
                                     user = await sync_to_async(User.objects.get)(username=nom)
-                                    value = await Reconnus.objects.filter(user=user,date=timezone.now().date()).aexists()
+                                    value = await Reconnus.objects.filter(user=user,date=timezone.localtime().now().date()).aexists()
                                     if not value:
                                         # Par construction (peut_enregistrer), score_vivacite n'est
                                         # None que si liveness_disponible() est False — jamais quand
