@@ -33,14 +33,16 @@ NOUVEAUTÉ :
 """
 
 # ─── IMPORTS ──────────────────────────────────────────────────────────────────
-import asyncio
+import asyncio,io
 import base64,copy
 import json
-
+import math
+import os
 import threading
 import time
 import traceback
-
+from concurrent.futures import ThreadPoolExecutor
+from PIL import Image
 import cv2
 import numpy as np
 import onnxruntime as ort
@@ -50,11 +52,14 @@ from . import embeddings_cache
 from pathlib import Path
 from scipy.optimize import linear_sum_assignment
 
+import insightface
+import matplotlib.pyplot as plt
+
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Reconnus,Source
 from asgiref.sync import sync_to_async 
 from django.utils import timezone
-
+from .models import Embedding 
 from django.contrib.auth.models import User
 # =============================================================
 # CHEMINS
@@ -113,6 +118,43 @@ MAX_AGE          = 5
 MIN_HITS         = 3
 IOU_THRESHOLD    = 0.15
 REINSPECT_DELAY  = 1.5
+
+# ── ROBUSTESSE RÉSEAU (coupure source type DroidCam) ───────────────────────
+# cv2.VideoCapture peut rester bloqué INDÉFINIMENT dans grab()/retrieve() (ou
+# même à l'ouverture) si une source réseau (HTTP/RTSP) est coupée en plein
+# flux — c'est un comportement connu d'OpenCV/FFmpeg, pas un bug de ce code.
+# Les propriétés CAP_PROP_*_TIMEOUT_MSEC existent mais sont peu fiables selon
+# la version d'OpenCV : on les pose quand même en 1ère ligne de défense, mais
+# le vrai filet de sécurité est le timeout asyncio ci-dessous, qu'on contrôle
+# nous-mêmes quoi qu'il arrive côté OpenCV.
+CAPTURE_OUVERTURE_TIMEOUT_MSEC = 8000
+CAPTURE_LECTURE_TIMEOUT_MSEC   = 8000
+CAPTURE_OUVERTURE_TIMEOUT_SEC  = CAPTURE_OUVERTURE_TIMEOUT_MSEC / 1000
+CAPTURE_LECTURE_TIMEOUT_SEC    = CAPTURE_LECTURE_TIMEOUT_MSEC / 1000
+
+# Pool de threads DÉDIÉ aux opérations cv2.VideoCapture (ouverture, lecture,
+# libération). Un thread qui reste bloqué sur une lecture réseau morte reste
+# coincé indéfiniment même après qu'on ait "timeout" côté asyncio (on ne peut
+# pas tuer un thread Python de force) — isoler ces appels dans leur propre
+# pool évite qu'un flux DroidCam mort n'affame le pool par défaut partagé par
+# tout le reste de Django (sync_to_async, etc.). max_workers borne le nombre
+# de threads qui peuvent rester coincés en même temps ; ajuste selon le
+# nombre de caméras simultanées attendues.
+_executor_capture = ThreadPoolExecutor(max_workers=8, thread_name_prefix="videocapture")
+
+
+def _ouvrir_capture(source):
+    """Ouvre une VideoCapture avec les timeouts posés en best-effort (certaines
+    versions d'OpenCV ignorent ces propriétés silencieusement — sans danger)."""
+    cap = cv2.VideoCapture(source)
+    try:
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, CAPTURE_OUVERTURE_TIMEOUT_MSEC)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, CAPTURE_LECTURE_TIMEOUT_MSEC)
+    except Exception:
+        pass  # propriété non supportée par cette version/ce backend : pas grave, le watchdog asyncio reste actif
+    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    return cap
+
 
 # ── LIVENESS (anti-spoofing) ───────────────────────────────────────────────
 # Un visage est jugé "vivant" si, sur les LIVENESS_FENETRE derniers scores
@@ -754,9 +796,20 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
         _derniere_frame  = 0.0
         _dernier_nettoyage = 0.0
 
-        cap = cv2.VideoCapture(source)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE,   1)
-        self.ret = cap.isOpened()
+        # Ouverture dans l'executor dédié, sous timeout : avant ce correctif, cet
+        # appel tournait directement dans la boucle asyncio — une source
+        # injoignable pouvait donc bloquer TOUT le process, pas juste cette caméra.
+        try:
+            cap = await asyncio.wait_for(
+                loop.run_in_executor(_executor_capture, _ouvrir_capture, source),
+                timeout=CAPTURE_OUVERTURE_TIMEOUT_SEC + 2,  # marge au-delà du timeout interne à OpenCV
+            )
+            self.ret = cap.isOpened()
+        except asyncio.TimeoutError:
+            print(f"[live_serveur] ouverture de la source {self.framename} bloquée > "
+                  f"{CAPTURE_OUVERTURE_TIMEOUT_SEC + 2}s — abandon")
+            cap = None
+            self.ret = False
 
         while self.streaming:
             base_personnes  = {} #Liste des personnes sera plutôt un json qui contiendra des personnes en key et ensuite la couleur associée
@@ -781,8 +834,29 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
                 # ── ANTI-LATENCE #3 : lire la frame la plus récente ───────────────
                 # _lire_frame_recente() vide le buffer avant de décoder -> zéro retard
-                self.ret, frame = await loop.run_in_executor(None, self.util._lire_frame_recente, cap)
-                
+                # Protégé par un timeout : si la source est coupée en plein flux
+                # (ex: DroidCam qui perd le réseau), cv2 peut rester bloqué dans
+                # grab()/retrieve() indéfiniment — sans ce wait_for, toute cette
+                # tâche (et potentiellement la caméra) resterait figée pour de bon.
+                if cap is None:
+                    self.ret, frame = False, None
+                else:
+                    try:
+                        self.ret, frame = await asyncio.wait_for(
+                            loop.run_in_executor(_executor_capture, self.util._lire_frame_recente, cap),
+                            timeout=CAPTURE_LECTURE_TIMEOUT_SEC + 2,
+                        )
+                    except asyncio.TimeoutError:
+                        print(f"[live_serveur] lecture bloquée > {CAPTURE_LECTURE_TIMEOUT_SEC + 2}s "
+                              f"sur {self.framename} (source probablement coupée)")
+                        # Tente de débloquer le thread coincé en libérant la capture
+                        # depuis un autre thread — pas garanti par OpenCV, mais
+                        # rapporté comme efficace en pratique dans ce cas précis.
+                        # Fire-and-forget : on n'attend pas sa fin, le thread sous-jacent
+                        # peut rester bloqué un moment, on ne doit pas s'y accrocher.
+                        _executor_capture.submit(cap.release)
+                        self.ret, frame = False, None
+
                 if not self.ret:
                     if not self.streaming:
                         break
@@ -791,9 +865,21 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                         await self.send(json.dumps({'type': 'stoperror'}))
                         print("données niveau stoperror envoyé ")
                         await asyncio.sleep(3)
-                        # On libère l'ancienne capture avant d'en rouvrir une
-                        await loop.run_in_executor(None, cap.release)
-                        cap = await loop.run_in_executor(None, cv2.VideoCapture, self.source)
+                        # On libère l'ancienne capture avant d'en rouvrir une — toujours
+                        # via l'executor dédié, et la réouverture elle-même est aussi
+                        # protégée par un timeout (se reconnecter à une IP morte peut
+                        # aussi bloquer, pas seulement la lecture).
+                        if cap is not None:
+                            _executor_capture.submit(cap.release)
+                        try:
+                            cap = await asyncio.wait_for(
+                                loop.run_in_executor(_executor_capture, _ouvrir_capture, self.source),
+                                timeout=CAPTURE_OUVERTURE_TIMEOUT_SEC + 2,
+                            )
+                        except asyncio.TimeoutError:
+                            print(f"[live_serveur] ré-ouverture de {self.framename} bloquée > "
+                                  f"{CAPTURE_OUVERTURE_TIMEOUT_SEC + 2}s — nouvel essai au prochain tour")
+                            cap = None
                         print("Je suis entrain de réessayer actuellement ")
                         continue
                     await self.send(json.dumps({'type': 'fin'}))
@@ -992,7 +1078,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 print(f"[live_serveur] erreur sur {self.framename} : {e}")
                 traceback.print_exc()
                 await asyncio.sleep(0.5)
-        cap.release()
+        if cap is not None:
+            _executor_capture.submit(cap.release)
             
             
     async def close(self, code = None, reason = None):
