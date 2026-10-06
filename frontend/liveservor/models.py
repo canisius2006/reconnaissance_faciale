@@ -37,6 +37,7 @@ class Source(models.Model):
     is_actif = models.BooleanField(default=False)
     is_open = models.BooleanField(default=True)
     is_webcam = models.BooleanField(default=False)
+    treated_link = models.CharField(blank=True,null=True)
     info_sup = models.JSONField(default=list)
     def __str__(self):
         return self.url
