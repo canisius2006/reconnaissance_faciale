@@ -12,24 +12,10 @@ MODÈLE REQUIS :
     Télécharger : face_detection_yunet_2023mar.onnx
     Source : https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
 
-MODÈLE ANTI-SPOOFING (liveness, optionnel mais recommandé) :
-    face_antispoof.onnx — modèle facenox/face-antispoof-onnx (Apache-2.0),
-    https://github.com/facenox/face-antispoof-onnx, version quantifiée
-    recommandée (best_model_quantized.onnx, ~600 Ko, CPU rapide), renommée
-    et placée dans static/model/face_antispoof.onnx.
-    Si absent, la détection de vivacité est simplement désactivée (aucun crash),
-    tout le reste du pipeline continue de fonctionner normalement.
-    ⚠️ L'indice de la classe "réel" (LIVENESS_INDEX_REEL) n'est pas confirmé
-    par la documentation du dépôt — à calibrer avec LIVENESS_DEBUG=True (voir
-    la zone de configuration LIVENESS plus bas).
-
 NOUVEAUTÉ :
     - Re-vérification automatique des visages "INCONNU" toutes les REINSPECT_DELAY secondes.
     - La structure de live_dictionnaire passe de [emb, nom, pct]
       à [emb, nom, pct, timestamp_derniere_tentative].
-    - Détection de vivacité (anti-spoofing) par piste SORT : ne bloque JAMAIS la
-      reconnaissance, mais MARQUE chaque personne reconnue comme vivante ou non
-      (consensus sur plusieurs frames), exploitable côté front et en base (Reconnus.info_sup).
 """
 
 # ─── IMPORTS ──────────────────────────────────────────────────────────────────
@@ -45,7 +31,6 @@ from concurrent.futures import ThreadPoolExecutor
 from PIL import Image
 import cv2
 import numpy as np
-import onnxruntime as ort
 from filterpy.kalman import KalmanFilter
 from .insight import get_app_rec
 from . import embeddings_cache
@@ -69,26 +54,6 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 chemin_modele = BASE_DIR/'static/model/face_detection_yunet_2023mar.onnx'
 #chemin_base = BASE_DIR/'static/model/embeddings.json'
-
-# ── Modèle anti-spoofing (liveness) ──────────────────────────────────────────
-# facenox/face-antispoof-onnx (Apache-2.0) — classifieur binaire Réel/Spoof,
-# un seul modèle (pas un ensemble), 600 Ko en version quantifiée, validé sur
-# CelebA Spoof (70k+ échantillons). Doc officielle du prétraitement :
-# https://github.com/facenox/face-antispoof-onnx (docs/DATA_PREPARATION.md, docs/LIMITATIONS.md)
-CHEMIN_ANTISPOOF   = BASE_DIR/'static/model/best_model.onnx'  # version non quantifiée (1.82 Mo), test de stabilité
-ANTISPOOF_PADDING  = 1.5   # agrandissement du carré centré sur le visage (valeur du dépôt)
-ANTISPOOF_TAILLE   = 128   # résolution d'entrée attendue par ce modèle
-
-# ── Correction d'éclairage (CLAHE) avant le modèle anti-spoofing ────────────
-# En basse lumière / fort bruit ISO (caméras DroidCam de qualité modeste,
-# pièces peu éclairées), la texture fine dont le modèle a besoin pour
-# distinguer un vrai visage d'une photo est en grande partie noyée dans le
-# bruit. CLAHE (égalisation d'histogramme adaptative) ravive le contraste
-# local SANS tout cramer, contrairement à une simple égalisation globale.
-ANTISPOOF_CLAHE_ACTIF        = True
-ANTISPOOF_CLAHE_CLIP_LIMIT   = 2.5   # plus haut = plus de contraste, mais plus de bruit amplifié aussi
-ANTISPOOF_CLAHE_TILE_GRID    = (8, 8)
-
 
 # ── InsightFace ────────────────────────────────────────────────────────────────
 # Instance partagée : une seule copie du modèle en mémoire pour tout le processus
@@ -155,32 +120,6 @@ def _ouvrir_capture(source):
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
 
-
-# ── LIVENESS (anti-spoofing) ───────────────────────────────────────────────
-# Un visage est jugé "vivant" si, sur les LIVENESS_FENETRE derniers scores
-# calculés pour sa piste, au moins LIVENESS_RATIO_MIN d'entre eux dépassent
-# LIVENESS_SEUIL. Un consensus multi-frames plutôt qu'une décision sur une
-# seule image : une photo immobile échoue systématiquement sur la durée,
-# alors qu'un vrai visage mal cadré une fois ne suffit pas à le disqualifier.
-LIVENESS_EVERY        = DETECTION_EVERY * 2  # best_model.onnx (float32) coûte plus cher que la
-# version quantifiée ; on l'interroge moins souvent. Le consensus sur fenêtre glissante lisse de
-# toute façon le résultat, donc perdre en fréquence ne perd pas grand-chose en fiabilité.
-LIVENESS_FENETRE       = 10
-LIVENESS_SEUIL         = 0.65   # durci par rapport au 0.5 par défaut du dépôt : sur un vrai visage,
-# le score reste quasi systématiquement bien au-dessus de 0.65 (observé en test), donc on peut
-# se permettre d'être plus exigeant pour mieux rejeter les photos. À réajuster selon tes tests.
-LIVENESS_RATIO_MIN     = 0.75
-# ⚠️ INCERTAIN — à confirmer avec LIVENESS_DEBUG=True : l'indice de la classe
-# "réel" dans la sortie à 2 classes du modèle facenox n'est pas documenté noir
-# sur blanc dans le README (seules les classes "Real"/"Spoof" sont nommées, sans
-# préciser l'ordre). 0 est une supposition de départ — si les résultats sont
-# inversés (une vraie personne toujours jugée spoof), passer à 1.
-LIVENESS_INDEX_REEL    = 0
-# Mettre à True temporairement : affiche dans la console la sortie brute ET la
-# sortie après softmax pour chaque visage évalué, pour calibrer LIVENESS_INDEX_REEL
-# et vérifier que les valeurs ont un sens (proches de 0 ou 1, pas des logits bruts
-# disproportionnés). À repasser à False une fois calé.
-LIVENESS_DEBUG         = True
 
 # ── ANTI-LATENCE #1 : limiter le débit d'envoi ────────────────────────────────
 # 15 fps suffit pour la reconnaissance — réduit CPU et taille de la file WebSocket
@@ -372,143 +311,6 @@ def nettoyer_live_embeddings():
                     if maintenant - valeur[2] > DELAI_EXPIRATION]:
             del live_embeddings[cle]
 # =============================================================
-# ANTI-SPOOFING (LIVENESS) — MiniFASNet, chargé une seule fois pour tout le processus
-# =============================================================
-
-_antispoof_sessions = None  # None = pas encore tenté ; [] = tenté et absent ; [..] = chargé
-
-def _softmax(x):
-    """Convertit des logits bruts en probabilités (somme = 1). Si la sortie du
-    modèle est déjà une probabilité (ex: Softmax intégré au graphe ONNX), ça ne
-    change quasiment rien ; si ce sont des logits bruts, c'est indispensable
-    avant de comparer le résultat à un seuil comme LIVENESS_SEUIL."""
-    e = np.exp(x - np.max(x))
-    return e / e.sum()
-
-
-def _charger_antispoof():
-    """Charge le modèle facenox/face-antispoof-onnx une seule fois (comme app_rec
-    pour InsightFace). Si le fichier .onnx est absent, la vivacité est désactivée
-    sans faire planter le reste du pipeline : score_liveness() retourne toujours
-    None dans ce cas."""
-    global _antispoof_sessions
-    if _antispoof_sessions is not None:
-        return _antispoof_sessions
-    try:
-        if not CHEMIN_ANTISPOOF.exists():
-            print(f"[liveness] modèle absent : {CHEMIN_ANTISPOOF} — vivacité désactivée tant qu'il n'est pas téléchargé")
-            _antispoof_sessions = []
-            return _antispoof_sessions
-        # Piège fréquent : un fichier .onnx téléchargé via Git LFS sans le bon
-        # client ne contient qu'un pointeur texte de quelques centaines d'octets,
-        # pas le vrai modèle binaire -> ça se détecte ici avant d'aller plus loin.
-        taille = CHEMIN_ANTISPOOF.stat().st_size
-        if taille < 50_000:
-            print(f"[liveness] {CHEMIN_ANTISPOOF} fait seulement {taille} octets — ce n'est probablement "
-                  f"pas le vrai fichier modèle (pointeur Git LFS ?). Vivacité désactivée.")
-            _antispoof_sessions = []
-            return _antispoof_sessions
-        # Limite les threads internes de CETTE session : sans ça, onnxruntime essaie d'utiliser
-        # tous les cœurs CPU disponibles pour un seul petit modèle, ce qui entre en concurrence
-        # avec YuNet et InsightFace qui tournent en parallèle. Un modèle aussi léger n'a pas
-        # besoin de multi-threading interne pour rester rapide.
-        opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 1
-        opts.inter_op_num_threads = 1
-        session = ort.InferenceSession(str(CHEMIN_ANTISPOOF), sess_options=opts, providers=['CPUExecutionProvider'])
-    except Exception as e:
-        # Quelle que soit la raison (fichier corrompu, opset incompatible, etc.),
-        # on désactive proprement la vivacité plutôt que de faire planter le flux vidéo.
-        print(f"[liveness] échec du chargement du modèle anti-spoofing : {e} — vivacité désactivée")
-        _antispoof_sessions = []
-        return _antispoof_sessions
-    _antispoof_sessions = [session]
-    print(f"[liveness] modèle anti-spoofing chargé ({CHEMIN_ANTISPOOF.name})")
-    return _antispoof_sessions
-
-
-def _corriger_eclairage(crop_bgr):
-    """CLAHE appliqué uniquement sur le canal de luminance (espace LAB), pour
-    raviver le contraste local sans déformer les couleurs de peau — important
-    ici puisque le modèle a aussi appris sur la couleur, pas juste la forme."""
-    lab = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2LAB)
-    l, a, b = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=ANTISPOOF_CLAHE_CLIP_LIMIT, tileGridSize=ANTISPOOF_CLAHE_TILE_GRID)
-    l_corrige = clahe.apply(l)
-    lab_corrige = cv2.merge((l_corrige, a, b))
-    return cv2.cvtColor(lab_corrige, cv2.COLOR_LAB2BGR)
-
-
-def _recadrer_avec_marge(frame, bbox, padding_factor=ANTISPOOF_PADDING, taille=ANTISPOOF_TAILLE):
-    """Reproduit exactement le recadrage documenté par facenox/face-antispoof-onnx :
-    carré centré sur le visage, agrandi par padding_factor (1.5 par défaut),
-    puis redimensionné en taille x taille avec une interpolation adaptée au sens
-    du redimensionnement (évite le flou d'un agrandissement mal interpolé).
-    `bbox` = la boîte SERRÉE du visage (celle de SORT), sans marge d'affichage."""
-    x1, y1, x2, y2 = bbox
-    bw, bh = x2 - x1, y2 - y1
-    if bw <= 0 or bh <= 0:
-        return None
-    cx, cy = x1 + bw / 2, y1 + bh / 2
-    cote = max(bw, bh) * padding_factor
-    nx1 = int(max(0, cx - cote / 2))
-    ny1 = int(max(0, cy - cote / 2))
-    nx2 = int(min(frame.shape[1], cx + cote / 2))
-    ny2 = int(min(frame.shape[0], cy + cote / 2))
-    crop = frame[ny1:ny2, nx1:nx2]
-    if crop.size == 0:
-        return None
-    # Correction d'éclairage AVANT redimensionnement : sur l'image encore à sa
-    # résolution d'origine, il y a plus de détail réel à raviver qu'après coup
-    # sur une image déjà réduite à 128x128.
-    if ANTISPOOF_CLAHE_ACTIF:
-        crop = _corriger_eclairage(crop)
-    interp = cv2.INTER_LANCZOS4 if crop.shape[0] < taille else cv2.INTER_AREA
-    return cv2.resize(crop, (taille, taille), interpolation=interp)
-
-
-def liveness_disponible():
-    """True si le modèle anti-spoofing a été chargé avec succès. Sert à distinguer
-    "fonctionnalité désactivée" (modèle absent -> comportement d'avant, transparent)
-    de "pas encore confirmé" (modèle actif mais consensus pas encore formé)."""
-    return len(_charger_antispoof()) > 0
-
-
-def score_liveness(frame, bbox, cid=None):
-    """Probabilité (0 = spoof, 1 = vrai visage) donnée par le modèle facenox.
-    Retourne None si le modèle est absent ou le recadrage impossible (à traiter
-    comme "indéterminé", jamais comme "spoof confirmé"). `cid` est optionnel,
-    uniquement pour identifier la piste dans les logs de debug."""
-    sessions = _charger_antispoof()
-    if not sessions or frame is None:
-        return None
-    try:
-        crop = _recadrer_avec_marge(frame, bbox)
-        if crop is None:
-            return None
-        # Le dépôt documente un entraînement en RGB ; OpenCV lit en BGR, conversion nécessaire.
-        crop_rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-        inp = crop_rgb.astype(np.float32) / 255.0
-        inp = np.transpose(inp, (2, 0, 1))[np.newaxis, ...]
-
-        session = sessions[0]
-        nom_entree = session.get_inputs()[0].name
-        out = session.run(None, {nom_entree: inp})[0][0]  # logits bruts, 2 classes
-        probas = _softmax(out)
-        s = float(probas[LIVENESS_INDEX_REEL])
-
-        if LIVENESS_DEBUG:
-            print(f"[liveness][debug][cid={cid}] bbox={bbox} "
-                  f"sortie brute={[round(float(v),3) for v in out]} "
-                  f"-> après softmax={[round(float(v),3) for v in probas]} "
-                  f"-> score classe {LIVENESS_INDEX_REEL} = {round(s,3)}")
-        return s
-    except Exception as e:
-        print(f"[liveness] erreur de scoring : {e}")
-        return None
-
-
-# =============================================================
 # DÉTECTION / RECONNAISSANCE EN ARRIÈRE-PLAN
 # =============================================================
 class Utilitaire():
@@ -533,12 +335,6 @@ class Utilitaire():
         self.cache = None
         self.last_modified = 0
 
-        # ── LIVENESS : historique de scores + dernier résultat connu, par cid ──
-        self.liveness_historique = {}   # {cid: [scores récents]}
-        self.liveness_dernier    = {}   # {cid: (vivant: bool|None, score: float|None)}
-        self.liveness_lock       = threading.Lock()
-        
-        
     def detecter(self, frame):
         """Détection YuNet. La taille d'entrée est recalée sur la frame réelle
         (elle peut changer en cours de flux, ex. WebRTC/LiveKit qui adapte la résolution)."""
@@ -548,9 +344,9 @@ class Utilitaire():
             self.taille_detecteur = (w, h)
         return self.detector.detect(frame)
 
-    def id_color(self,tid):
-        np.random.seed(tid * 7 + 13)
-        return tuple(int(c) for c in np.random.randint(100, 255, 3))
+    def id_color(self, tid):
+        rng = np.random.default_rng(int(tid) * 7 + 13)
+        return tuple(int(c) for c in rng.integers(100, 255, 3))
 
     def resoudre_id(self,tid):
         """Retourne l'id canonique associé à tid (suit la chaîne de redirections)."""
@@ -563,128 +359,91 @@ class Utilitaire():
             return cid
 
 
-    def verifier_vivacite(self, cid, frame, bbox):
+    def obtenir_embedding(self, tid, img: np.ndarray):
         """
-        Calcule un score de vivacité pour ce visage (frame complète + bbox SERRÉ,
-        pas le crop margé utilisé pour l'affichage/la reconnaissance — chaque modèle
-        de l'ensemble recadre lui-même à sa propre échelle), l'ajoute à l'historique
-        de la piste `cid`, et retourne un consensus sur la fenêtre glissante.
+        Extrait l'embedding et identifie le visage.
 
-        Ne rejette JAMAIS rien elle-même : retourne juste un statut que l'appelant
-        choisit d'exploiter (affichage, enregistrement en base, alerte...).
-
-        Retour : (vivant, score)
-            vivant = True  -> consensus "vrai visage" sur la fenêtre
-            vivant = False -> consensus "spoof probable" sur la fenêtre
-            vivant = None  -> pas encore assez d'historique, ou modèles absents
-            score  = dernier score individuel calculé (None si non calculé)
+        Cette fonction reste synchrone et est exécutée dans un thread dédié.
+        Aucun accès Django ORM direct n'est effectué ici.
         """
-        score = score_liveness(frame, bbox, cid=cid)
-        if score is None:
-            # Modèles absents ou crop invalide : on ne se prononce pas,
-            # on ne touche pas à l'historique existant de cette piste.
-            with self.liveness_lock:
-                return self.liveness_dernier.get(cid, (None, None))
-
-        with self.liveness_lock:
-            historique = self.liveness_historique.setdefault(cid, [])
-            historique.append(score)
-            if len(historique) > LIVENESS_FENETRE:
-                historique.pop(0)
-
-            if len(historique) < LIVENESS_FENETRE:
-                resultat = (None, score)
-            else:
-                taux = sum(s >= LIVENESS_SEUIL for s in historique) / len(historique)
-                resultat = (taux >= LIVENESS_RATIO_MIN, score)
-
-            self.liveness_dernier[cid] = resultat
-            return resultat
-
-    def nettoyer_vivacite(self, cids_actifs):
-        """Retire l'historique de vivacité des pistes qui ne sont plus suivies
-        (appelé périodiquement depuis la boucle principale, pas à chaque frame)."""
-        with self.liveness_lock:
-            obsoletes = [c for c in self.liveness_historique if c not in cids_actifs]
-            for c in obsoletes:
-                self.liveness_historique.pop(c, None)
-                self.liveness_dernier.pop(c, None)
-
-    def obtenir_embedding(self,tid, img: np.ndarray):
-        """
-        Extrait l'embedding du visage cropé.
-        - Si le visage ressemble à un id déjà connu -> redirection dans id_map.
-        - Sinon -> crée une nouvelle entrée et lance l'identification.
-        - Si c'est une re-vérification d'un INCONNU -> met à jour l'embedding
-        et relance l'identification.
-        """
-        # ── FIX #2 : ajout d'un except pour capturer les erreurs silencieuses ─
-        # Avant : seul finally existait — toute exception tuait le thread sans
-        # jamais sortir du statut "En cours d'Analyse"
-        # Après : l'exception est loggée et le statut est remis à "INCONNU"
-        # pour permettre une relance via REINSPECT_DELAY
         try:
-            # Embeddings de référence : cache partagé (plus aucune requête par visage),
-            # noms et matrice alignés, lus en un seul bloc.
             noms, matrice = embeddings_cache.obtenir(fermer_connexion=True)
+
+            if img is None or img.size == 0:
+                raise ValueError("Crop visage vide")
 
             visages = app_rec.get(img)
             if not visages:
                 cid = self.resoudre_id(tid)
                 with self.dict_lock:
-                    if cid in self.live_dictionnaire and self.live_dictionnaire[cid][1] == "INCONNU":
-                        self.live_dictionnaire[cid][3] = time.time()
+                    entree = self.live_dictionnaire.get(cid)
+                    if entree is not None:
+                        entree[1] = "INCONNU"
+                        entree[3] = time.time()
                 return
 
-            emb = visages[0].normed_embedding
+            emb = np.asarray(
+                visages[0].normed_embedding,
+                dtype=np.float32,
+            )
 
+            if emb.ndim != 1 or emb.size == 0:
+                raise ValueError("Embedding InsightFace invalide")
+
+            # Essaie de rattacher cette piste à une piste déjà connue.
             with self.dict_lock:
                 paires_valides = [
-                    (k, self.live_dictionnaire[k][0])
-                    for k in self.live_dictionnaire
-                    if self.live_dictionnaire[k][0] is not None
+                    (k, value[0])
+                    for k, value in self.live_dictionnaire.items()
+                    if value[0] is not None and k != self.resoudre_id(tid)
                 ]
 
-            ids_connus  = [p[0] for p in paires_valides]
-            embs_connus = [p[1] for p in paires_valides]
-
             id_trouve = None
-            if embs_connus:
-                embs_array  = np.stack(embs_connus)
-                similarites = np.dot(embs_array, emb)
-                max_val     = float(np.max(similarites))
-                if max_val >= SEUIL_COSINUS:
-                    id_trouve = ids_connus[int(np.argmax(similarites))]
+            if paires_valides:
+                ids_connus = [p[0] for p in paires_valides]
+                embs_connus = np.stack([p[1] for p in paires_valides])
+                similarites = np.dot(embs_connus, emb)
+                meilleur = int(np.argmax(similarites))
+                if float(similarites[meilleur]) >= SEUIL_COSINUS:
+                    id_trouve = ids_connus[meilleur]
 
-            if id_trouve is not None and id_trouve != self.resoudre_id(tid):
+            if id_trouve is not None:
                 with self.id_map_lock:
                     self.id_map[tid] = id_trouve
-            else:
-                cid = self.resoudre_id(tid)
-                with self.dict_lock:
-                    if cid not in self.live_dictionnaire:
-                        self.live_dictionnaire[cid] = [emb, "En cours d'Analyse", 0, time.time()]
-                    else:
-                        self.live_dictionnaire[cid][0] = emb
-                        self.live_dictionnaire[cid][1] = "En cours d'Analyse"
-                self.identifier(cid, noms, matrice)
+                return
 
-        except Exception as e:
-            print(f"[obtenir_embedding] ERREUR pour tid={tid} : {e}")
+            cid = self.resoudre_id(tid)
+
+            with self.dict_lock:
+                if cid not in self.live_dictionnaire:
+                    self.live_dictionnaire[cid] = [
+                        emb, "En cours d'Analyse", 0.0, time.time()
+                    ]
+                else:
+                    self.live_dictionnaire[cid][0] = emb
+                    self.live_dictionnaire[cid][1] = "En cours d'Analyse"
+                    self.live_dictionnaire[cid][3] = time.time()
+
+            self.identifier(cid, noms, matrice)
+
+        except Exception as exc:
+            print(
+                f"[obtenir_embedding] ERREUR tid={tid} : {exc}"
+            )
             traceback.print_exc()
-            # Remettre le statut à INCONNU pour que REINSPECT_DELAY permette une relance
+
             cid = self.resoudre_id(tid)
             with self.dict_lock:
-                if cid in self.live_dictionnaire:
-                    self.live_dictionnaire[cid][1] = "INCONNU"
-                    self.live_dictionnaire[cid][3] = time.time()
+                entree = self.live_dictionnaire.get(cid)
+                if entree is not None:
+                    entree[1] = "INCONNU"
+                    entree[3] = time.time()
+
         finally:
             with self.en_cours_lock:
                 self.en_cours.discard(tid)
 
 
-        
-    
     def identifier(self, id_n, noms, matrice):
         """
         Identifie le visage via similarité cosinus sur la base de référence.
@@ -698,11 +457,11 @@ class Utilitaire():
         if emb is None:
             return
 
-        if matrice.shape[0] == 0:
-            # Aucune personne enregistrée : tout le monde est INCONNU (évite np.max sur un tableau vide)
+        matrice = np.asarray(matrice, dtype=np.float32)
+        if matrice.ndim != 2 or matrice.shape[0] == 0:
             max_val, nom_max = 0.0, "INCONNU"
         else:
-            sims    = np.dot(matrice, emb)
+            sims = np.dot(matrice, emb)
             max_val = float(np.max(sims))
             nom_max = str(noms[int(np.argmax(sims))])
         nom_final     = nom_max if max_val >= SEUIL_COSINUS else "INCONNU"
@@ -744,7 +503,8 @@ class Utilitaire():
 class VideoStreamConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
-        self.streaming      = False
+        self.streaming = False
+        self.live_task = None
         self.liste_personne_reconnues = set() # Cet set va me permettre de ne pas appeller la fonction pour excel plusieurs fois qu'il n'en faut et ne pas garder doublon 
         self.framename      = self.scope['url_route']['kwargs']['framename']
         print('avant')
@@ -752,25 +512,36 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
         print('connexion acceptée')
 
     async def disconnect(self, code):
-        print(code,"Il y a eu déconnexion au niveau de ",self.framename)
+        print(code, "Il y a eu déconnexion au niveau de ", self.framename)
         self.streaming = False
+
+        task = getattr(self, 'live_task', None)
+        current = asyncio.current_task()
+        if task is not None and task is not current and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
 
     async def receive(self, text_data):
         try:
             data = json.loads(text_data)
             if len(data)==0:
                 return
-            print(data, "C'est ce que le navigateur envoie")
+            # Debug volontairement silencieux : évite de polluer la console.
         except json.JSONDecodeError as e:
             print(f'Erreur de parsing JSON : {e}')
             return
 
-        message_type = data['type']
+        message_type = data.get('type')
 
         if message_type == 'url':
-            if data.get('message'):
-                self.source    = data['message']
-                if len(self.source)==1:
+            if data.get('message') is not None:
+                self.source = data['message']
+                if isinstance(self.source, str) and len(self.source) == 1 and self.source.isdigit():
                     self.source = int(self.source)
                 else:
                     await asyncio.sleep(2)
@@ -779,7 +550,18 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 self.streaming = True
                 
 
-                asyncio.create_task(self.live_serveur(self.source))
+                if self.live_task is not None and not self.live_task.done():
+                    self.live_task.cancel()
+                    try:
+                        await self.live_task
+                    except asyncio.CancelledError:
+                        pass
+                    except Exception:
+                        pass
+
+                self.live_task = asyncio.create_task(
+                    self.live_serveur(self.source)
+                )
         
                 
         
@@ -790,7 +572,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
         self.util = Utilitaire() #Créaction de la classe de nos besoins 
         self.nombre_essai = 0 # ça représente le nombre d'éssaie qu'il faut faire pour arrêter l'appel vers le même lien 
        
-        loop             = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
 
         # ── ANTI-LATENCE #4 : timestamp de la dernière frame envoyée ──────────
         _derniere_frame  = 0.0
@@ -813,7 +595,6 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
         while self.streaming:
             base_personnes  = {} #Liste des personnes sera plutôt un json qui contiendra des personnes en key et ensuite la couleur associée
-            vivacite_personnes = {} # Canal séparé : {nom: True/False/None} — n'affecte jamais `liste`, donc jamais le frontend existant
 
             try:   
                 # ── ANTI-LATENCE #4 : contrôle du débit ───────────────────────────
@@ -828,8 +609,6 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 # Nettoyage de live_embeddings (au plus 1 fois par seconde)
                 if _derniere_frame - _dernier_nettoyage >= 1.0:
                     nettoyer_live_embeddings()
-                    cids_actifs = {self.util.resoudre_id(t.id) for t in self.util.tracker.tracks}
-                    self.util.nettoyer_vivacite(cids_actifs)
                     _dernier_nettoyage = _derniere_frame
 
                 # ── ANTI-LATENCE #3 : lire la frame la plus récente ───────────────
@@ -908,6 +687,9 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 tracked = self.util.tracker.update(detections)
 
                 # --- Affichage ---
+                # Copie sans annotations pour extraire les visages à reconnaître.
+                # au fil de la boucle, ce qui pollue le crop du 2e visage s'il est proche du 1er.
+                frame_brut = frame.copy() if tracked else frame
                 for (x1, y1, x2, y2, tid) in tracked:
                     if tid is None:
                         continue
@@ -919,24 +701,8 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                     y1_l      = max(0, y1 - marge)
                     x2_l      = min(frame.shape[1], x2 + marge)
                     y2_l      = min(frame.shape[0], y2 + marge)
-                    face_crop = frame[y1_l:y2_l, x1_l:x2_l]
+                    face_crop = frame_brut[y1_l:y2_l, x1_l:x2_l]
 
-                    # ── LIVENESS : recalculé à la même cadence que la détection YuNet,
-                    # pas à chaque frame, pour limiter le coût CPU. Sur les frames
-                    # intermédiaires on réutilise le dernier résultat connu pour cette piste.
-                    try:
-                        if self.util.frame_count % LIVENESS_EVERY == 0:
-                            vivant, score_vivacite = await loop.run_in_executor(
-                                None, self.util.verifier_vivacite, cid, frame, (x1, y1, x2, y2)
-                            )
-                        else:
-                            with self.util.liveness_lock:
-                                vivant, score_vivacite = self.util.liveness_dernier.get(cid, (None, None))
-                    except Exception as e:
-                        # Défense en profondeur : quoi qu'il arrive côté vivacité, on ne doit
-                        # JAMAIS empêcher la reconnaissance normale de continuer à fonctionner.
-                        print(f"[liveness] erreur inattendue, ignorée : {e}")
-                        vivant, score_vivacite = None, None
 
                     with self.util.dict_lock:
                         entree_cid = self.util.live_dictionnaire.get(cid)
@@ -981,10 +747,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
 
                     cid   = self.util.resoudre_id(tid)
                     color = self.util.id_color(cid)
-                    # Rouge si le consensus de vivacité juge ce visage suspect (photo/écran) ;
-                    # la couleur normale de la piste sinon (y compris si indéterminé pour l'instant).
-                    color_boite = (0, 0, 255) if vivant is False else color
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), color_boite, 2)
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
 
                     try:
                         with self.util.dict_lock:
@@ -993,58 +756,60 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                         if entree:
                             nom, pct = entree[1], entree[2]
                             if nom == "INCONNU":
-                                label = f" INCONNU  "
-                                with live_embeddings_lock:
-                                    live_embeddings[f'{attributid}'] = [self.framename, self.util.live_dictionnaire[cid][0], time.time()]
-                                attributid += 1 # Ici, notre variable est incrémenter 
+                                label = " INCONNU"
+                                embedding_live = entree[0]
+                                if embedding_live is not None:
+                                    cle_track = f"TRACK:{self.framename}:{cid}"
+                                    with live_embeddings_lock:
+                                        live_embeddings[cle_track] = [
+                                            self.framename,
+                                            embedding_live,
+                                            time.time(),
+                                        ]
                             elif nom == "En cours d'Analyse":
                                 label = f" ..."
                             else:
-                                # ── LIVENESS : l'affichage et la reconnaissance en direct restent
-                                # toujours visibles (même en cas de spoof suspecté) — seul
-                                # l'ENREGISTREMENT en base de présence est bloqué tant que la
-                                # vivacité n'est pas positivement confirmée.
-                                suffixe_vivacite = " (non confirmé)" if vivant is False else ""
-                                label = f" {nom} {round(np.random.uniform(0.8,0.98)*100,2)}%{suffixe_vivacite}"
+                                label = f" {nom} {pct:.1f}%"
                                 color_css = '#{:02x}{:02x}{:02x}'.format(int(color[2]), int(color[1]), int(color[0]))
 
-                                # Un spoof confirmé (vivant is False) n'apparaît PAS dans `liste` —
-                                # le nom n'est donc jamais envoyé au panel droit du frontend dans ce
-                                # cas. True ou None (pas encore confirmé) continuent d'apparaître
-                                # normalement, comme avant.
-                                if vivant is not False:
-                                    base_personnes[nom] = [color_css]
-
-                                # Canal séparé, indépendant de `liste`, pour ne jamais perturber le
-                                # frontend existant : vivant=True (confirmé) / False (spoof suspecté)
-                                # / None (indéterminé, pas encore assez de frames). Rempli dans tous
-                                # les cas (y compris spoof) : c'est le canal destiné à l'audit, pas à
-                                # l'affichage visible — voir discussion précédente.
-                                vivacite_personnes[nom] = vivant
+                                base_personnes[nom] = [color_css]
 
                                 with live_embeddings_lock:
                                     live_embeddings[nom] = [self.framename, self.util.live_dictionnaire[cid][0], time.time()] # Ici, j'enregistre l'embeddings avec le nom de la personne et le nom du framename(source) correspondant 
 
-                                # Tant que la fonctionnalité liveness est active, il faut une
-                                # confirmation POSITIVE (vivant is True) avant d'enregistrer la
-                                # présence — pas juste l'absence de détection de spoof. Si le modèle
-                                # anti-spoofing est absent, on garde le comportement d'origine.
-                                peut_enregistrer = (not liveness_disponible()) or (vivant is True)
+                                if nom not in self.liste_personne_reconnues:
+                                    try:
+                                        user = await sync_to_async(
+                                            User.objects.get
+                                        )(username=nom)
 
-                                if nom not in self.liste_personne_reconnues and peut_enregistrer:
-                                    self.liste_personne_reconnues.add(nom)
-                                    user = await sync_to_async(User.objects.get)(username=nom)
-                                    value = await Reconnus.objects.filter(user=user,date=timezone.localtime().now().date()).aexists()
-                                    if not value:
-                                        # Par construction (peut_enregistrer), score_vivacite n'est
-                                        # None que si liveness_disponible() est False — jamais quand
-                                        # vivant is True. round() protégé quand même, par prudence.
-                                        score_arrondi = round(score_vivacite, 3) if score_vivacite is not None else None
-                                        await sync_to_async(Reconnus.objects.create)(
-                                            source=self.framename, user=user,
-                                            info_sup=[{'liveness_score': score_arrondi, 'is_real': vivant}],
+                                        today = timezone.localtime().date()
+                                        value = await Reconnus.objects.filter(
+                                            user=user,
+                                            date=today,
+                                        ).aexists()
+
+                                        if not value:
+                                            await sync_to_async(
+                                                Reconnus.objects.create
+                                            )(
+                                                source=self.framename,
+                                                user=user,
+                                                info_sup=[],
+                                            )
+
+                                        # On ne bloque plus les tentatives futures si
+                                        # une requête ORM a échoué.
+                                        self.liste_personne_reconnues.add(nom)
+
+                                    except User.DoesNotExist:
+                                        print(
+                                            f"[DB] utilisateur introuvable : {nom}"
                                         )
-                                        #Pour pouvoir avoir ma liste sans doublon
+                                    except Exception as exc:
+                                        print(
+                                            f"[DB] erreur présence {nom} : {exc}"
+                                        )
                                         
                                 
                         else:
@@ -1068,9 +833,7 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 frame_b64 = base64.b64encode(buffer).decode('utf-8')
                 
                 
-                # 'vivacite' est une clé EN PLUS, indépendante de 'liste' : le frontend actuel
-                # qui ne lit que 'liste' continue de fonctionner sans aucun changement.
-                data = {'type': 'stream', 'message': frame_b64, 'liste': base_personnes, 'vivacite': vivacite_personnes}
+                data = {'type': 'stream', 'message': frame_b64, 'liste': base_personnes}
 
                 await self.send(json.dumps(data))
                 
@@ -1080,9 +843,11 @@ class VideoStreamConsumer(AsyncWebsocketConsumer):
                 await asyncio.sleep(0.5)
         if cap is not None:
             _executor_capture.submit(cap.release)
-            
-            
-    async def close(self, code = None, reason = None):
+
+        if getattr(self, 'live_task', None) is asyncio.current_task():
+            self.live_task = None
+
+    async def close(self, code=None, reason=None):
         return await super().close(code, reason)
     
     
@@ -1111,7 +876,14 @@ class TrackingConsumer(AsyncWebsocketConsumer):
             # 2. Décoder ce buffer pour reconstruire l'image (Matrice H x L x Canaux)
             # cv2.IMREAD_COLOR force le chargement en image couleur (3 canaux : B, G, R)
             image_bgr = cv2.imdecode(np_buffer, cv2.IMREAD_COLOR)
-            print('image reçu')
+            if image_bgr is None:
+                await self.send(json.dumps({
+                    'resultat': {},
+                    'type': 'tracking',
+                    'error': 'image_invalide',
+                }))
+                return
+
             if self.tracking:
                 await self.tracking_par_image(image_bgr)
                 print("Fin du tracking")
@@ -1120,7 +892,7 @@ class TrackingConsumer(AsyncWebsocketConsumer):
                 data = json.loads(text_data)
                 if len(data)==0:
                     return
-                print(data, "C'est ce que le navigateur envoie")
+                # Debug volontairement silencieux : évite de polluer la console.
             except json.JSONDecodeError as e:
                 print(f'Erreur de parsing JSON : {e}')
                 return
@@ -1143,7 +915,7 @@ class TrackingConsumer(AsyncWebsocketConsumer):
             return []
 
         # run_in_executor évite de bloquer la boucle asyncio pendant le calcul InsightFace (CPU-intensif)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         visages = await loop.run_in_executor(None, app_rec.get, img)
         if len(visages) != 1:
             return None
@@ -1162,17 +934,29 @@ class TrackingConsumer(AsyncWebsocketConsumer):
             if len(another_list) ==0:return []
             
             SEUIL_COSINUS = 0.5
-            liste_live_emb = [value[1] for value in another_list.values()]
-            liste_live_framename = [value[0] for value in another_list.values()]
-            liste_live_nom = list(another_list.keys())
-            liste_live_emb = np.stack(liste_live_emb)
-            liste_calcul_similarite = np.dot(liste_live_emb,emb_inconnu)
-            max_valeur = np.max(liste_calcul_similarite)
-            indice_max = np.argmax(liste_calcul_similarite)
+            valeurs_valides = [
+                (key, value)
+                for key, value in another_list.items()
+                if value[1] is not None
+            ]
+            if not valeurs_valides:
+                return []
+
+            liste_live_nom = [key for key, _ in valeurs_valides]
+            liste_live_emb = [value[1] for _, value in valeurs_valides]
+            liste_live_framename = [value[0] for _, value in valeurs_valides]
+            liste_live_emb = np.stack(liste_live_emb).astype(np.float32)
+            emb_inconnu = np.asarray(emb_inconnu, dtype=np.float32)
+            if emb_inconnu.ndim != 1 or emb_inconnu.size == 0:
+                return []
+
+            liste_calcul_similarite = np.dot(liste_live_emb, emb_inconnu)
+            max_valeur = float(np.max(liste_calcul_similarite))
+            indice_max = int(np.argmax(liste_calcul_similarite))
             #Maintenant, on va avoir le nom correspondant à la valeur maximale qu'on a obtenue
-            if max_valeur>SEUIL_COSINUS:
+            if max_valeur >= SEUIL_COSINUS:
                 nom_trouve = liste_live_nom[indice_max]
-                if nom_trouve.isdigit():
+                if str(nom_trouve).startswith('TRACK:') or str(nom_trouve).isdigit():
                     nom_trouve = 'Tracké'
                 framename = liste_live_framename[indice_max]
                 return [str(nom_trouve),str(framename)]
