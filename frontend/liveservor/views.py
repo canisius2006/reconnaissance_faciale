@@ -24,6 +24,7 @@ from .forms import OrganizationForm
 from django.contrib.auth.mixins import UserPassesTestMixin
 from django.views.generic import UpdateView
 from django.views.generic import DeleteView
+from django.views.generic import ListView
 
 # Create your views here.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -62,7 +63,7 @@ def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer l
     try:
         organisation = Organization.objects.get(admin=user)
     except:
-        return redirect('organization_create')
+        return redirect('organization_list')
     """la vue des caméras """
     if request.method=='POST':
         source = request.POST.get('source')
@@ -88,7 +89,7 @@ class OrganizationCreateView(LoginRequiredMixin, CreateView):
     model = Organization
     form_class = OrganizationForm
     template_name = 'organizations/organization_form.html'
-    success_url = reverse_lazy('dashboard') # Redirection après succès
+    success_url = reverse_lazy('organization_list') # Redirection après succès
 
     def form_valid(self, form):
         # Assigne l'utilisateur connecté comme administrateur de l'organisation
@@ -115,6 +116,16 @@ class OrganizationDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView
         organization = self.get_object()
         return self.request.user == organization.admin
 
+
+class OrganizationListView(LoginRequiredMixin, ListView):
+    model = Organization
+    template_name = 'organizations/organization_list.html'
+    context_object_name = 'organizations'
+    def get_queryset(self):
+        # Filtre les organisations pour ne retourner que celles créées par l'utilisateur connecté
+        return Organization.objects.filter(admin=self.request.user).order_by('-created_at')
+
+@login_required
 def reconnaissance_faciale_image(request:HttpRequest,name):
     """Pour pouvoir faire la reconnaissance pour l'image envoyé sous forme de requête post"""
     if request.method=='POST' :
@@ -151,7 +162,8 @@ def reconnaissance_faciale_image(request:HttpRequest,name):
             return JsonResponse({'name':name,'source':source})
     else:
         return JsonResponse({'name':name,'url':"static/img/flux_stop.png",'source':'image','liste':None})
-    
+
+@login_required 
 def presence(request):
     if request.method=='GET':
         date = request.GET.get('date')
@@ -166,7 +178,7 @@ def presence(request):
     print(liste)
     return JsonResponse({'personnes':liste})
 
-
+@login_required
 def telecharger(request):
     """Cette fonction va nous permettre de pouvoir télécharger la liste """
     if request.method=='GET':
@@ -194,7 +206,8 @@ def telecharger(request):
         buffer.seek(0)
         
         return FileResponse(buffer,as_attachment=True,filename=nom_fichier)
-
+    
+@login_required
 def ajouter(request:HttpRequest)->HttpResponse:
     """La vue pour pouvoir ajouter de nouveaux visages """
     if request.method == 'POST':
@@ -229,7 +242,7 @@ def ajouter(request:HttpRequest)->HttpResponse:
             return JsonResponse({'message':f"Aucun visage exploitable pour {nom} : utilisez des photos nettes avec un seul visage.",'status':400},status=400)
     return render(request,'ajouter.html')
 
-
+@login_required
 def liste_source(request:HttpRequest)->JsonResponse:
     """Cette fonction nous permet d'enregistrer les sources de l'utilisateur et de s'y connecter quand il revient vers les sources"""
     liste = Source.objects.values_list('url',flat=True)

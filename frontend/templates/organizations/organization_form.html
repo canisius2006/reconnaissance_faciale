@@ -1,343 +1,144 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% if object %}Modifier{% else %}Créer{% endif %} mon Organisation</title>
-    <style>
-        :root {
-            --bg-body: #f8fafc;
-            --bg-card: #ffffff;
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-            --primary: #4f46e5;
-            --primary-hover: #4338ca;
-            --border: #e2e8f0;
-            --danger: #ef4444;
-            --danger-bg: #fef2f2;
-            --radius: 12px;
-        }
+{% extends "organization_base.html" %}
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        }
+{% block title %}{% if object %}Modifier {{ object.name }}{% else %}Nouvelle organisation{% endif %}{% endblock %}
 
-        body {
-            background-color: var(--bg-body);
-            color: var(--text-main);
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        }
+{% block breadcrumb %}
+    <li><a href="{% url 'organization_list' %}">Mes organisations</a></li>
+    <li><span aria-current="page">{% if object %}Modifier {{ object.name }}{% else %}Nouvelle organisation{% endif %}</span></li>
+{% endblock %}
 
-        header {
-            background-color: var(--bg-card);
-            border-bottom: 1px solid var(--border);
-            padding: 1rem 1.5rem;
-        }
+{% block extra_css %}
+    .card { max-width: 640px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+    .card-head { padding: 1.5rem 1.75rem; border-bottom: 1px solid var(--line); }
+    .card-head h1 { font-size: 1.4rem; letter-spacing: -.02em; }
+    .card-head p { color: var(--muted); font-size: .9rem; margin-top: .25rem; }
+    form.main-form { padding: 1.75rem; display: grid; gap: 1.5rem; }
+    .field { display: grid; gap: .45rem; }
+    .field > label, .field > .label { font-size: .875rem; font-weight: 600; }
+    .required { color: var(--danger); }
+    input[type="text"], textarea {
+        width: 100%; padding: .65rem .85rem; border: 1px solid var(--line); border-radius: 8px;
+        font: inherit; font-size: .9rem; background: var(--bg); transition: border-color .15s, box-shadow .15s;
+    }
+    input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+    textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+    textarea.invalid { border-color: var(--danger); box-shadow: 0 0 0 3px var(--danger-soft); }
+    .hint { font-size: .8rem; color: var(--muted); }
+    .hint.bad { color: var(--danger); font-weight: 500; }
+    .hint.ok { color: var(--accent-text); }
+    .error-message { color: var(--danger); font-size: .8rem; font-weight: 500; }
+    .alert-error { background: var(--danger-soft); border: 1px solid var(--danger-line); color: var(--danger); padding: .75rem 1rem; border-radius: 8px; font-size: .9rem; }
+    .alert-error ul { list-style: none; }
 
-        .nav-container {
-            max-width: 800px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+    .logo-row { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+    .logo-preview, .logo-placeholder { width: 64px; height: 64px; border-radius: 12px; border: 1px solid var(--line); flex-shrink: 0; }
+    .logo-preview { object-fit: cover; }
+    .logo-placeholder { background: var(--bg); border-style: dashed; display: grid; place-items: center; color: var(--muted); font-size: .75rem; }
+    input[type="file"] { font-size: .85rem; max-width: 100%; }
 
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-weight: 600;
-        }
+    .actions { display: flex; justify-content: flex-end; gap: .75rem; padding-top: 1.25rem; border-top: 1px solid var(--line); }
 
-        .brand-logo {
-            width: 32px;
-            height: 32px;
-            background-color: var(--primary);
-            color: white;
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-        }
+    .danger-zone {
+        max-width: 640px; margin-top: 1.5rem; padding: 1.1rem 1.5rem; border: 1px solid var(--danger-line);
+        border-radius: var(--radius); background: var(--surface);
+        display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
+    }
+    .danger-zone h2 { font-size: .95rem; }
+    .danger-zone p { font-size: .85rem; color: var(--muted); }
+{% endblock %}
 
-        .back-link {
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-        }
-
-        .back-link:hover {
-            color: var(--text-main);
-        }
-
-        main {
-            padding: 2.5rem 1rem;
-            flex-grow: 1;
-        }
-
-        .card {
-            max-width: 650px;
-            margin: 0 auto;
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-            overflow: hidden;
-        }
-
-        .card-header {
-            padding: 1.5rem 2rem;
-            border-bottom: 1px solid var(--border);
-            background-color: #fafafa;
-        }
-
-        .card-header h1 {
-            font-size: 1.25rem;
-            font-weight: 700;
-        }
-
-        .card-header p {
-            font-size: 0.875rem;
-            color: var(--text-muted);
-            margin-top: 0.25rem;
-        }
-
-        form {
-            padding: 2rem;
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-
-        .form-group {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-
-        label {
-            font-size: 0.875rem;
-            font-weight: 600;
-        }
-
-        .required {
-            color: var(--danger);
-        }
-
-        input[type="text"], textarea {
-            width: 100%;
-            padding: 0.625rem 0.875rem;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 0.875rem;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        input[type="text"]:focus, textarea:focus {
-            border-color: var(--primary);
-        }
-
-        textarea {
-            resize: vertical;
-            font-family: monospace;
-        }
-
-        .file-upload-wrapper {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .preview-img {
-            width: 60px;
-            height: 60px;
-            border-radius: 8px;
-            object-fit: cover;
-            border: 1px solid var(--border);
-        }
-
-        .placeholder-img {
-            width: 60px;
-            height: 60px;
-            border-radius: 8px;
-            background-color: var(--bg-body);
-            border: 1px dashed var(--border);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--text-muted);
-            font-size: 0.75rem;
-        }
-
-        .help-text {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-        }
-
-        .error-message {
-            color: var(--danger);
-            font-size: 0.75rem;
-            font-weight: 500;
-        }
-
-        .alert-error {
-            background-color: var(--danger-bg);
-            border: 1px solid #fca5a5;
-            color: var(--danger);
-            padding: 0.75rem 1rem;
-            border-radius: 8px;
-            font-size: 0.875rem;
-        }
-
-        .actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 0.75rem;
-            padding-top: 1rem;
-            border-top: 1px solid var(--border);
-        }
-
-        .btn {
-            padding: 0.625rem 1.25rem;
-            border-radius: 8px;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            text-decoration: none;
-            border: none;
-            transition: background-color 0.2s;
-        }
-
-        .btn-secondary {
-            background-color: #fff;
-            border: 1px solid var(--border);
-            color: var(--text-main);
-        }
-
-        .btn-secondary:hover {
-            background-color: var(--bg-body);
-        }
-
-        .btn-primary {
-            background-color: var(--primary);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background-color: var(--primary-hover);
-        }
-
-        footer {
-            text-align: center;
-            padding: 1.5rem;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            border-top: 1px solid var(--border);
-            background-color: var(--bg-card);
-        }
-    </style>
-</head>
-<body>
-
-    <header>
-        <div class="nav-container">
-            <div class="brand">
-                <div class="brand-logo">O</div>
-                <span>Espace Client</span>
-            </div>
-            <a href="{% url 'organization_list' %}" class="back-link">← Retour au tableau de bord</a>
+{% block content %}
+    <div class="card">
+        <div class="card-head">
+            <h1>{% if object %}Modifier l'organisation{% else %}Nouvelle organisation{% endif %}</h1>
+            <p>{% if object %}Mettez à jour les informations de votre structure.{% else %}Renseignez le nom, puis ajoutez un logo si vous le souhaitez.{% endif %}</p>
         </div>
-    </header>
 
-    <main>
-        <div class="card">
-            <div class="card-header">
-                <h1>{% if object %}Modifier l'organisation{% else %}Nouvelle organisation{% endif %}</h1>
-                <p>
-                    {% if object %}
-                        Mettez à jour les informations de votre structure.
+        <form method="post" enctype="multipart/form-data" class="main-form" novalidate>
+            {% csrf_token %}
+
+            {% if form.non_field_errors %}
+                <div class="alert-error" role="alert">{{ form.non_field_errors }}</div>
+            {% endif %}
+
+            <div class="field">
+                <label for="{{ form.name.id_for_label }}">Nom de l'organisation <span class="required" aria-hidden="true">*</span></label>
+                <input type="text" name="name" id="{{ form.name.id_for_label }}"
+                       value="{{ form.name.value|default:'' }}" required placeholder="Ex : Acme Corporation" autofocus>
+                {% if form.name.errors %}<span class="error-message">{{ form.name.errors.0 }}</span>{% endif %}
+            </div>
+
+            <div class="field">
+                <span class="label">Logo</span>
+                <div class="logo-row">
+                    {% if object and object.logo %}
+                        <img src="{{ object.logo.url }}" alt="Logo actuel" class="logo-preview" id="logo-preview">
                     {% else %}
-                        Configurez votre espace en quelques clics.
+                        <div class="logo-placeholder" id="logo-placeholder">Logo</div>
+                        <img src="" alt="Aperçu du logo" class="logo-preview" id="logo-preview" hidden>
                     {% endif %}
-                </p>
+                    <div>
+                        <input type="file" name="logo" id="{{ form.logo.id_for_label }}" accept="image/*" aria-label="Choisir un logo">
+                        <p class="hint" style="margin-top:4px;">PNG, JPG ou WEBP.</p>
+                    </div>
+                </div>
+                {% if form.logo.errors %}<span class="error-message">{{ form.logo.errors.0 }}</span>{% endif %}
             </div>
 
-            <form method="post" enctype="multipart/form-data">
-                {% csrf_token %}
+            <div style='display:none;' class="field">
+                <label for="{{ form.info_sup.id_for_label }}">Informations complémentaires</label>
+                <textarea name="info_sup" id="{{ form.info_sup.id_for_label }}" rows="4"
+                          placeholder='[{"cle": "slogan", "valeur": "Innovation & Qualité"}]'>{{ form.info_sup.value|default:'' }}</textarea>
+                <span class="hint" id="json-hint">Facultatif. Saisissez du JSON valide.</span>
+                {% if form.info_sup.errors %}<span class="error-message">{{ form.info_sup.errors.0 }}</span>{% endif %}
+            </div>
 
-                {% if form.non_field_errors %}
-                    <div class="alert-error">
-                        {{ form.non_field_errors }}
-                    </div>
-                {% endif %}
+            <div class="actions">
+                <a href="{% url 'organization_list' %}" class="btn btn-secondary">Annuler</a>
+                <button type="submit" class="btn btn-primary" id="submit-btn">{% if object %}Enregistrer les modifications{% else %}Créer l'organisation{% endif %}</button>
+            </div>
+        </form>
+    </div>
 
-                <!-- Champ Nom -->
-                <div class="form-group">
-                    <label for="{{ form.name.id_for_label }}">
-                        Nom de l'organisation <span class="required">*</span>
-                    </label>
-                    <input type="text" name="name" id="{{ form.name.id_for_label }}" 
-                           value="{{ form.name.value|default:'' }}" required placeholder="Ex: Acme Corporation">
-                    {% if form.name.errors %}
-                        <span class="error-message">{{ form.name.errors.0 }}</span>
-                    {% endif %}
-                </div>
-
-                <!-- Champ Logo -->
-                <div class="form-group">
-                    <label>Logo de l'organisation</label>
-                    <div class="file-upload-wrapper">
-                        {% if object and object.logo %}
-                            <img src="{{ object.logo.url }}" alt="Logo" class="preview-img">
-                        {% else %}
-                            <div class="placeholder-img">Logo</div>
-                        {% endif %}
-                        <div>
-                            <input type="file" name="logo" id="{{ form.logo.id_for_label }}" accept="image/*">
-                            <p class="help-text" style="margin-top: 4px;">Formats acceptés : PNG, JPG, WEBP</p>
-                        </div>
-                    </div>
-                    {% if form.logo.errors %}
-                        <span class="error-message">{{ form.logo.errors.0 }}</span>
-                    {% endif %}
-                </div>
-
-                <!-- Champ JSON info_sup -->
-                <div class="form-group">
-                    <label for="{{ form.info_sup.id_for_label }}">
-                        Informations complémentaires
-                    </label>
-                    <textarea name="info_sup" id="{{ form.info_sup.id_for_label }}" rows="4" 
-                              placeholder='Ex: [{"cle": "slogan", "valeur": "Innovation & Qualité"}]'>{{ form.info_sup.value|default:'' }}</textarea>
-                    <span class="help-text">Format JSON valide.</span>
-                    {% if form.info_sup.errors %}
-                        <span class="error-message">{{ form.info_sup.errors.0 }}</span>
-                    {% endif %}
-                </div>
-
-                <!-- Actions -->
-                <div class="actions">
-                    <a href="{% url 'organization_list' %}" class="btn btn-secondary">Annuler</a>
-                    <button type="submit" class="btn btn-primary">
-                        {% if object %}Enregistrer{% else %}Créer{% endif %}
-                    </button>
-                </div>
-            </form>
+    {% if object %}
+    <div class="danger-zone">
+        <div>
+            <h2>Supprimer cette organisation</h2>
+            <p>Vous devrez confirmer sur la page suivante.</p>
         </div>
-    </main>
+        <a href="{% url 'organization_delete' object.pk %}" class="btn btn-danger-outline">Supprimer…</a>
+    </div>
+    {% endif %}
+{% endblock %}
 
-    <footer>
-        © 2026 - Tous droits réservés.
-    </footer>
+{% block scripts %}
+<script>
+    (function () {
+        // Aperçu du logo choisi
+        var file = document.querySelector('input[name="logo"]');
+        var img = document.getElementById('logo-preview');
+        var ph = document.getElementById('logo-placeholder');
+        file.addEventListener('change', function () {
+            var f = file.files[0];
+            if (!f) return;
+            img.src = URL.createObjectURL(f);
+            img.hidden = false;
+            if (ph) ph.hidden = true;
+        });
 
-</body>
-</html>
+        // Validation JSON en direct
+        var ta = document.querySelector('textarea[name="info_sup"]');
+        var hint = document.getElementById('json-hint');
+        var btn = document.getElementById('submit-btn');
+        var base = hint.textContent;
+        function check() {
+            var v = ta.value.trim();
+            if (!v) { ta.classList.remove('invalid'); hint.className = 'hint'; hint.textContent = base; btn.disabled = false; return; }
+            try { JSON.parse(v); ta.classList.remove('invalid'); hint.className = 'hint ok'; hint.textContent = 'JSON valide.'; btn.disabled = false; }
+            catch (e) { ta.classList.add('invalid'); hint.className = 'hint bad'; hint.textContent = 'JSON invalide : vérifiez les guillemets, virgules et crochets.'; btn.disabled = true; }
+        }
+        ta.addEventListener('input', check);
+        check();
+    })();
+</script>
+{% endblock %}

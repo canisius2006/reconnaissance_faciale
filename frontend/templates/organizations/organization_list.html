@@ -1,0 +1,110 @@
+{% extends "organization_base.html" %}
+
+{% block title %}Mes organisations{% endblock %}
+
+{% block breadcrumb %}
+    <li><span aria-current="page">Mes organisations</span></li>
+{% endblock %}
+
+{% block extra_css %}
+    .page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .page-head h1 { font-size: 1.75rem; letter-spacing: -.02em; line-height: 1.2; }
+    .page-head p { color: var(--muted); font-size: .9rem; margin-top: .25rem; }
+
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .count { font-size: .875rem; color: var(--muted); }
+    .search {
+        padding: .5rem .85rem; border: 1px solid var(--line); border-radius: 8px; font: inherit; font-size: .875rem;
+        min-width: 220px; background: var(--bg);
+    }
+    .search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+    .org-list { list-style: none; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+    .org-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; flex-wrap: wrap; }
+    .org-row + .org-row { border-top: 1px solid var(--line); }
+    .org-row:hover { background: rgba(255, 255, 255, .03); }
+    .org-info { display: flex; align-items: center; gap: 1rem; min-width: 0; }
+    .org-logo, .org-fallback { width: 46px; height: 46px; border-radius: 10px; flex-shrink: 0; border: 1px solid var(--line); }
+    .org-logo { object-fit: cover; }
+    .org-fallback { background: var(--accent-soft); color: var(--accent-text); display: grid; place-items: center; font-weight: 700; }
+    .org-name { font-size: 1rem; font-weight: 600; overflow-wrap: anywhere; }
+    .org-name a { text-decoration: none; }
+    .org-name a:hover { color: var(--accent); }
+    .org-meta { font-size: .8rem; color: var(--muted); }
+    .org-actions { display: flex; gap: .5rem; }
+
+    .empty { background: var(--surface); border: 1px dashed var(--line); border-radius: var(--radius); padding: 3rem 1.5rem; text-align: center; }
+    .empty h2 { font-size: 1.15rem; margin-bottom: .4rem; }
+    .empty p { color: var(--muted); font-size: .9rem; margin: 0 auto 1.25rem; max-width: 42ch; }
+    .no-result { display: none; padding: 1.5rem; text-align: center; color: var(--muted); font-size: .9rem; }
+{% endblock %}
+
+{% block content %}
+    <div class="page-head">
+        <div>
+            <h1>Mes organisations</h1>
+            <p>Créez, modifiez ou supprimez vos structures.</p>
+        </div>
+        {% if organizations %}
+        <a href="{% url 'organization_create' %}" class="btn btn-primary">+ Nouvelle organisation</a>
+        {% endif %}
+    </div>
+
+    {% if organizations %}
+        <div class="toolbar">
+            <span class="count">{{ organizations|length }} organisation{{ organizations|length|pluralize }}</span>
+            {% if organizations|length > 4 %}
+            <input type="search" class="search" id="search" placeholder="Rechercher par nom" aria-label="Rechercher une organisation">
+            {% endif %}
+        </div>
+
+        <ul class="org-list" id="org-list">
+            {% for org in organizations %}
+            <li class="org-row" data-name="{{ org.name|lower }}">
+                <div class="org-info">
+                    {% if org.logo %}
+                        <img src="{{ org.logo.url }}" alt="" class="org-logo">
+                    {% else %}
+                        <div class="org-fallback" aria-hidden="true">{{ org.name|slice:":2"|upper }}</div>
+                    {% endif %}
+                    <div>
+                        <div class="org-name"><a href="{% url 'organization_edit' org.pk %}">{{ org.name }}</a></div>
+                        <div class="org-meta">Créée le {{ org.created_at|date:"d/m/Y" }}</div>
+                    </div>
+                </div>
+                <div class="org-actions">
+                    <a href="{% url 'organization_edit' org.pk %}" class="btn btn-secondary btn-sm">Modifier</a>
+                    <a href="{% url 'organization_delete' org.pk %}" class="btn btn-danger-outline btn-sm">Supprimer</a>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        <p class="no-result" id="no-result">Aucune organisation ne correspond à votre recherche.</p>
+    {% else %}
+        <div class="empty">
+            <h2>Aucune organisation pour le moment</h2>
+            <p>Créez votre première organisation pour configurer votre espace.</p>
+            <a href="{% url 'organization_create' %}" class="btn btn-primary">Créer une organisation</a>
+        </div>
+    {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+    (function () {
+        var input = document.getElementById('search');
+        if (!input) return;
+        var rows = document.querySelectorAll('#org-list .org-row');
+        var empty = document.getElementById('no-result');
+        input.addEventListener('input', function () {
+            var q = input.value.trim().toLowerCase(), shown = 0;
+            rows.forEach(function (r) {
+                var ok = r.dataset.name.indexOf(q) !== -1;
+                r.style.display = ok ? '' : 'none';
+                if (ok) shown++;
+            });
+            empty.style.display = shown ? 'none' : 'block';
+        });
+    })();
+</script>
+{% endblock %}
