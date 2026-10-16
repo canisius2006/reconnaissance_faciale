@@ -1,0 +1,32 @@
+{% extends "base1.html" %}
+{% block title %}Connexion{% endblock %}
+
+{% block content %}
+<h1>Connexion</h1>
+
+<form method="post" action="{% url 'account_login' %}">
+  {% csrf_token %}
+
+  {% for error in form.non_field_errors %}
+    <p class="alert error">{{ error }}</p>
+  {% endfor %}
+
+  {% include "account/_field.html" with field=form.login %}
+  {% include "account/_field.html" with field=form.password %}
+
+  {% if form.remember %}
+    <label class="check">{{ form.remember }} Se souvenir de moi</label>
+  {% endif %}
+
+  {% if redirect_field_value %}
+    <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
+  {% endif %}
+
+  <button type="submit">Se connecter</button>
+</form>
+
+<div class="links">
+  <a href="{% url 'account_reset_password' %}">Mot de passe oublié ?</a>
+  <a href="{% url 'account_signup' %}">Créer un compte</a>
+</div>
+{% endblock %}

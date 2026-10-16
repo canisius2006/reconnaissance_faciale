@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% if object %}Modifier{% else %}Créer{% endif %} mon Organisation</title>
+    <style>
+        :root {
+            --bg-body: #f8fafc;
+            --bg-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --border: #e2e8f0;
+            --danger: #ef4444;
+            --danger-bg: #fef2f2;
+            --radius: 12px;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        header {
+            background-color: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+        }
+
+        .nav-container {
+            max-width: 800px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-weight: 600;
+        }
+
+        .brand-logo {
+            width: 32px;
+            height: 32px;
+            background-color: var(--primary);
+            color: white;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+        }
+
+        .back-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .back-link:hover {
+            color: var(--text-main);
+        }
+
+        main {
+            padding: 2.5rem 1rem;
+            flex-grow: 1;
+        }
+
+        .card {
+            max-width: 650px;
+            margin: 0 auto;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+            overflow: hidden;
+        }
+
+        .card-header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border);
+            background-color: #fafafa;
+        }
+
+        .card-header h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
+
+        .card-header p {
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            margin-top: 0.25rem;
+        }
+
+        form {
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .required {
+            color: var(--danger);
+        }
+
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 0.625rem 0.875rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus, textarea:focus {
+            border-color: var(--primary);
+        }
+
+        textarea {
+            resize: vertical;
+            font-family: monospace;
+        }
+
+        .file-upload-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .preview-img {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            object-fit: cover;
+            border: 1px solid var(--border);
+        }
+
+        .placeholder-img {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            background-color: var(--bg-body);
+            border: 1px dashed var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .help-text {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .error-message {
+            color: var(--danger);
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .alert-error {
+            background-color: var(--danger-bg);
+            border: 1px solid #fca5a5;
+            color: var(--danger);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.75rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .btn {
+            padding: 0.625rem 1.25rem;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            border: none;
+            transition: background-color 0.2s;
+        }
+
+        .btn-secondary {
+            background-color: #fff;
+            border: 1px solid var(--border);
+            color: var(--text-main);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--bg-body);
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-hover);
+        }
+
+        footer {
+            text-align: center;
+            padding: 1.5rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            border-top: 1px solid var(--border);
+            background-color: var(--bg-card);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="nav-container">
+            <div class="brand">
+                <div class="brand-logo">O</div>
+                <span>Espace Client</span>
+            </div>
+            <a href="{% url 'organization_list' %}" class="back-link">← Retour au tableau de bord</a>
+        </div>
+    </header>
+
+    <main>
+        <div class="card">
+            <div class="card-header">
+                <h1>{% if object %}Modifier l'organisation{% else %}Nouvelle organisation{% endif %}</h1>
+                <p>
+                    {% if object %}
+                        Mettez à jour les informations de votre structure.
+                    {% else %}
+                        Configurez votre espace en quelques clics.
+                    {% endif %}
+                </p>
+            </div>
+
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                    <div class="alert-error">
+                        {{ form.non_field_errors }}
+                    </div>
+                {% endif %}
+
+                <!-- Champ Nom -->
+                <div class="form-group">
+                    <label for="{{ form.name.id_for_label }}">
+                        Nom de l'organisation <span class="required">*</span>
+                    </label>
+                    <input type="text" name="name" id="{{ form.name.id_for_label }}" 
+                           value="{{ form.name.value|default:'' }}" required placeholder="Ex: Acme Corporation">
+                    {% if form.name.errors %}
+                        <span class="error-message">{{ form.name.errors.0 }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Champ Logo -->
+                <div class="form-group">
+                    <label>Logo de l'organisation</label>
+                    <div class="file-upload-wrapper">
+                        {% if object and object.logo %}
+                            <img src="{{ object.logo.url }}" alt="Logo" class="preview-img">
+                        {% else %}
+                            <div class="placeholder-img">Logo</div>
+                        {% endif %}
+                        <div>
+                            <input type="file" name="logo" id="{{ form.logo.id_for_label }}" accept="image/*">
+                            <p class="help-text" style="margin-top: 4px;">Formats acceptés : PNG, JPG, WEBP</p>
+                        </div>
+                    </div>
+                    {% if form.logo.errors %}
+                        <span class="error-message">{{ form.logo.errors.0 }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Champ JSON info_sup -->
+                <div class="form-group">
+                    <label for="{{ form.info_sup.id_for_label }}">
+                        Informations complémentaires
+                    </label>
+                    <textarea name="info_sup" id="{{ form.info_sup.id_for_label }}" rows="4" 
+                              placeholder='Ex: [{"cle": "slogan", "valeur": "Innovation & Qualité"}]'>{{ form.info_sup.value|default:'' }}</textarea>
+                    <span class="help-text">Format JSON valide.</span>
+                    {% if form.info_sup.errors %}
+                        <span class="error-message">{{ form.info_sup.errors.0 }}</span>
+                    {% endif %}
+                </div>
+
+                <!-- Actions -->
+                <div class="actions">
+                    <a href="{% url 'organization_list' %}" class="btn btn-secondary">Annuler</a>
+                    <button type="submit" class="btn btn-primary">
+                        {% if object %}Enregistrer{% else %}Créer{% endif %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </main>
+
+    <footer>
+        © 2026 - Tous droits réservés.
+    </footer>
+
+</body>
+</html>

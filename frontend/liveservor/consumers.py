@@ -19,16 +19,13 @@ NOUVEAUTÉ :
 """
 
 # ─── IMPORTS ──────────────────────────────────────────────────────────────────
-import asyncio,io
+import asyncio
 import base64,copy
 import json
-import math
-import os
 import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from PIL import Image
 import cv2
 import numpy as np
 from filterpy.kalman import KalmanFilter
@@ -36,9 +33,6 @@ from .insight import get_app_rec
 from . import embeddings_cache
 from pathlib import Path
 from scipy.optimize import linear_sum_assignment
-
-import insightface
-import matplotlib.pyplot as plt
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import Reconnus,Source

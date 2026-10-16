@@ -1,0 +1,28 @@
+{% extends "base1.html" %}
+{% block title %}Inscription{% endblock %}
+
+{% block content %}
+<h1>Créer un compte</h1>
+
+<form method="post" action="{% url 'account_signup' %}">
+  {% csrf_token %}
+
+  {% for error in form.non_field_errors %}
+    <p class="alert error">{{ error }}</p>
+  {% endfor %}
+
+  {% for field in form.visible_fields %}
+    {% include "account/_field.html" with field=field %}
+  {% endfor %}
+
+  {% if redirect_field_value %}
+    <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
+  {% endif %}
+
+  <button type="submit">S'inscrire</button>
+</form>
+
+<div class="links">
+  <a href="{% url 'account_login' %}">J'ai déjà un compte</a>
+</div>
+{% endblock %}

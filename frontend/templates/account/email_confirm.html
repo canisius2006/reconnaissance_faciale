@@ -1,0 +1,23 @@
+{% extends "base1.html" %}
+{% block title %}Confirmation de l'email{% endblock %}
+
+{% block content %}
+<h1>Confirmer l'adresse email</h1>
+
+{% if confirmation %}
+  {% if can_confirm %}
+    <p>Confirmes-tu que <strong>{{ confirmation.email_address.email }}</strong> est bien ton adresse email ?</p>
+    <form method="post" action="{% url 'account_confirm_email' confirmation.key %}">
+      {% csrf_token %}
+      <button type="submit">Confirmer</button>
+    </form>
+  {% else %}
+    <p class="alert error">Impossible de confirmer {{ confirmation.email_address.email }} : cette adresse est déjà associée à un autre compte.</p>
+  {% endif %}
+{% else %}
+  <p>Ce lien de confirmation est invalide ou a expiré.</p>
+  <div class="links">
+    <a href="{% url 'account_email' %}">Demander un nouveau lien</a>
+  </div>
+{% endif %}
+{% endblock %}

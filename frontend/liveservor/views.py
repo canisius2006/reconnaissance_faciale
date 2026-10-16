@@ -12,10 +12,19 @@ from django.core.files.base import ContentFile
 from .models import ImageTraite,Reconnus,Profile,Source
 from .creactionfichier import enregistrer_presence
 from django.core.files.storage import default_storage
-from .models import Embedding 
+from .models import Embedding,Profile,Organization 
 from . import ajouter_une_personne as aj 
 from django.contrib.auth.models import User
 import re,unicodedata 
+from django.contrib.auth.decorators import login_required 
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.urls import reverse_lazy
+from django.views.generic import CreateView
+from .forms import OrganizationForm
+from django.contrib.auth.mixins import UserPassesTestMixin
+from django.views.generic import UpdateView
+from django.views.generic import DeleteView
+
 # Create your views here.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,7 +55,14 @@ def extract_full_name(username):
 def accueil(request):
     return render(request,'accueil.html') 
 
+@login_required
 def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer la liste des noms des personnes dans la base de données et l'envoyer dans le template 
+    #Premièrement , nous allons essayer de voir si la personne en question dispose d'une organisation avant d'accéder au dashboard
+    user = request.user 
+    try:
+        organisation = Organization.objects.get(admin=user)
+    except:
+        return render(request,)
     """la vue des caméras """
     if request.method=='POST':
         source = request.POST.get('source')
@@ -66,6 +82,38 @@ def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer l
     liste = list(base.keys())
         
     return render(request,'dashboard_1.html',{'liste':liste})
+
+
+class OrganizationCreateView(LoginRequiredMixin, CreateView):
+    model = Organization
+    form_class = OrganizationForm
+    template_name = 'organizations/organization_form.html'
+    success_url = reverse_lazy('dashboard') # Redirection après succès
+
+    def form_valid(self, form):
+        # Assigne l'utilisateur connecté comme administrateur de l'organisation
+        form.instance.admin = self.request.user
+        return super().form_valid(form)
+
+class OrganizationUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView):
+    model = Organization
+    form_class = OrganizationForm
+    template_name = 'organizations/organization_form.html'
+    success_url = reverse_lazy('dashboard')
+
+    def test_func(self):
+        # Vérifie si l'utilisateur connecté est bien l'admin de cette organisation
+        organization = self.get_object()
+        return self.request.user == organization.admin
+
+class OrganizationDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
+    model = Organization
+    template_name = 'organizations/organization_confirm_delete.html'
+    success_url = reverse_lazy('dashboard')
+
+    def test_func(self):
+        organization = self.get_object()
+        return self.request.user == organization.admin
 
 def reconnaissance_faciale_image(request:HttpRequest,name):
     """Pour pouvoir faire la reconnaissance pour l'image envoyé sous forme de requête post"""

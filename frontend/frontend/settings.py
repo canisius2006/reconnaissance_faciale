@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 from pathlib import Path
 from dotenv import load_dotenv 
 import os 
+from decouple import config
 load_dotenv()
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ['*']
 
@@ -42,6 +43,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'liveservor',
+    "django.contrib.sites",
+    "allauth",
+    "allauth.account",
 ]
 
 # #Configuration du Q_cluster
@@ -52,17 +56,49 @@ INSTALLED_APPS = [
 #     'django_redis': None,
 #     'orm': 'default',  # utilise ma base de données
 # }
+SITE_ID = 2
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware', 
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
-    
+    "allauth.account.middleware.AccountMiddleware", 
 ]
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+    "allauth.account.auth_backends.AuthenticationBackend",
+]
+
+ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
+ACCOUNT_EMAIL_VERIFICATION = "mandatory"   # "mandatory" en production
+
+LOGIN_REDIRECT_URL = "/dashboard/"
+LOGOUT_REDIRECT_URL = "/"
+
+
+if DEBUG:
+    # Les emails s'affichent dans le terminal
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+else:
+    EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config("EMAIL_HOST_USER_GMAIL")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD_GMAIL")
+EMAIL_HOST = config("EMAIL_HOST_GMAIL")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL_GMAIL")
+SERVER_EMAIL = EMAIL_HOST_USER
+ACCOUNT_EMAIL_SUBJECT_PREFIX = "[Oeil de Dieu]"
+#ACCOUNT_EMAIL_SUBJECT_PREFIX = "[Mon site] "
 
 ROOT_URLCONF = 'frontend.urls'
 
@@ -104,6 +140,15 @@ CHANNEL_LAYERS = {
     }
 }
 
+
+#STORAGES = {
+#    "default": {
+#        "BACKEND": "django.core.files.storage.FileSystemStorage",
+#    },
+#    "staticfiles": {
+#        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+#    },
+#}
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -149,6 +194,6 @@ STATICFILES_DIRS = [
 # Chemin absolu du dossier où Django stockera les fichiers médias localement
 MEDIA_ROOT = BASE_DIR/'media'
 
-#STATIC_ROOT = BASE_DIR / 'static'  # ← c'est ça qui manque
+STATIC_ROOT = BASE_DIR / 'staticfiles'  # ← c'est ça qui manque
 # L'URL publique pour accéder à ces fichiers via le navigateur
 MEDIA_URL = '/media/'

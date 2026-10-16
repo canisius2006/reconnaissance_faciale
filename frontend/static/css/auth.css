@@ -1,0 +1,161 @@
+:root {
+  --bg: #f3f4f6;
+  --card: #ffffff;
+  --text: #111827;
+  --muted: #6b7280;
+  --border: #d1d5db;
+  --primary: #2563eb;
+  --primary-hover: #1d4ed8;
+  --danger: #dc2626;
+  --success-bg: #dcfce7;
+  --success-text: #166534;
+  --error-bg: #fee2e2;
+  --error-text: #991b1b;
+  --info-bg: #dbeafe;
+  --info-text: #1e40af;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --text: #f1f5f9;
+    --muted: #94a3b8;
+    --border: #475569;
+    --primary: #3b82f6;
+    --primary-hover: #60a5fa;
+    --success-bg: #14532d;
+    --success-text: #bbf7d0;
+    --error-bg: #7f1d1d;
+    --error-text: #fecaca;
+    --info-bg: #1e3a8a;
+    --info-text: #bfdbfe;
+  }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+.auth-card {
+  width: min(420px, 100%);
+  background: var(--card);
+  padding: 2rem;
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, .1);
+}
+
+h1 { margin: 0 0 1rem; font-size: 1.5rem; }
+h2 { margin: 1.5rem 0 .5rem; font-size: 1.1rem; }
+p  { margin: 0 0 1rem; }
+
+/* Champs */
+.field { margin-bottom: 1rem; }
+
+label { display: block; margin-bottom: .3rem; font-weight: 600; font-size: .95rem; }
+
+input[type="text"],
+input[type="email"],
+input[type="password"] {
+  width: 100%;
+  padding: .65rem .8rem;
+  font: inherit;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+input:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+  border-color: var(--primary);
+}
+
+.has-error input { border-color: var(--danger); }
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-weight: 400;
+  margin-bottom: 1rem;
+}
+
+.help { margin-top: .3rem; font-size: .85rem; color: var(--muted); }
+.help ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+
+p.error { margin: .3rem 0 0; color: var(--danger); font-size: .88rem; }
+
+/* Boutons */
+button {
+  width: 100%;
+  padding: .7rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  color: #fff;
+  background: var(--primary);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s;
+}
+button:hover { background: var(--primary-hover); }
+button.secondary { background: var(--muted); }
+button.danger { background: var(--danger); }
+
+.actions { display: grid; gap: .5rem; margin-top: 1rem; }
+
+/* Liens */
+.links {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .5rem;
+  margin-top: 1.25rem;
+  font-size: .92rem;
+}
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Messages */
+.alert {
+  padding: .7rem .9rem;
+  border-radius: 8px;
+  font-size: .92rem;
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+.alert.success { background: var(--success-bg); color: var(--success-text); }
+.alert.error, .alert.warning { background: var(--error-bg); color: var(--error-text); }
+
+/* Liste d'emails */
+.email-list { list-style: none; margin: 0 0 .5rem; padding: 0; }
+.email-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .5rem;
+  padding: .5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.email-list .check { margin: 0; flex: 1; }
+.tag {
+  font-size: .75rem;
+  padding: .1rem .5rem;
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+.tag.ok   { background: var(--success-bg); color: var(--success-text); }
+.tag.warn { background: var(--error-bg);   color: var(--error-text); }

@@ -23,6 +23,7 @@ from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('',include('liveservor.urls')),
+    path("accounts/", include("allauth.urls")),
     # ✅ Sert les médias indépendamment de DEBUG
     # path('media/<path:path>', serve, {'document_root': settings.MEDIA_ROOT}),
 ]

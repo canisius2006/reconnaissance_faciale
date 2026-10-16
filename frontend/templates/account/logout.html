@@ -1,0 +1,19 @@
+{% extends "base1.html" %}
+{% block title %}Déconnexion{% endblock %}
+
+{% block content %}
+<h1>Déconnexion</h1>
+<p>Veux-tu vraiment te déconnecter ?</p>
+
+<form method="post" action="{% url 'account_logout' %}">
+  {% csrf_token %}
+  {% if redirect_field_value %}
+    <input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">
+  {% endif %}
+  <button type="submit">Se déconnecter</button>
+</form>
+
+<div class="links">
+  <a href="/">Annuler</a>
+</div>
+{% endblock %}

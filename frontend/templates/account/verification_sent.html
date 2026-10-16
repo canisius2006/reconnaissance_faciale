@@ -1,0 +1,11 @@
+{% extends "base1.html" %}
+{% block title %}Vérifie ta boîte mail{% endblock %}
+
+{% block content %}
+<h1>Vérifie ta boîte mail</h1>
+<p>Nous t'avons envoyé un email de confirmation. Clique sur le lien qu'il contient pour activer ton compte. Si tu ne le vois pas, regarde dans tes spams.</p>
+
+<div class="links">
+  <a href="{% url 'account_login' %}">Retour à la connexion</a>
+</div>
+{% endblock %}

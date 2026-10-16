@@ -27,7 +27,7 @@ class Reconnus(models.Model):
     info_sup = models.JSONField(default=list)
     is_confirmed = models.BooleanField(default=False)
     def __str__(self):
-        return f"{self.nom} à {self.date} {self.heure}"
+        return f"{self.user} à {self.date} {self.heure}"
     
     
 class Source(models.Model):

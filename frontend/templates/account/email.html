@@ -1,0 +1,38 @@
+{% extends "base1.html" %}
+{% block title %}Adresses email{% endblock %}
+
+{% block content %}
+<h1>Adresses email</h1>
+
+{% if emailaddresses %}
+<form method="post" action="{% url 'account_email' %}">
+  {% csrf_token %}
+  <ul class="email-list">
+    {% for emailaddress in emailaddresses %}
+      <li>
+        <label class="check">
+          <input type="radio" name="email" value="{{ emailaddress.email }}"
+                 {% if emailaddress.primary or emailaddresses|length == 1 %}checked{% endif %}>
+          {{ emailaddress.email }}
+        </label>
+        {% if emailaddress.verified %}<span class="tag ok">Vérifiée</span>{% else %}<span class="tag warn">Non vérifiée</span>{% endif %}
+        {% if emailaddress.primary %}<span class="tag">Principale</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+
+  <div class="actions">
+    <button type="submit" name="action_primary">Définir comme principale</button>
+    <button type="submit" name="action_send" class="secondary">Renvoyer la confirmation</button>
+    <button type="submit" name="action_remove" class="danger">Supprimer</button>
+  </div>
+</form>
+{% endif %}
+
+<h2>Ajouter une adresse</h2>
+<form method="post" action="{% url 'account_email' %}">
+  {% csrf_token %}
+  {% include "account/_field.html" with field=form.email %}
+  <button type="submit" name="action_add">Ajouter</button>
+</form>
+{% endblock %}
