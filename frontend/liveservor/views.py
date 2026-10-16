@@ -62,7 +62,7 @@ def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer l
     try:
         organisation = Organization.objects.get(admin=user)
     except:
-        return render(request,)
+        return redirect('organization_create')
     """la vue des caméras """
     if request.method=='POST':
         source = request.POST.get('source')
