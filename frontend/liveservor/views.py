@@ -60,7 +60,7 @@ def accueil(request):
 def dashboard(request:HttpRequest,id_organisation)->HttpResponse: #Ici, nous allons recupérer la liste des noms des personnes dans la base de données et l'envoyer dans le template 
     #Premièrement , nous allons essayer de voir si la personne en question dispose d'une organisation avant d'accéder au dashboard
     try:
-        organisation = Organization.objects.get(id=id_organisation)
+        organisation = Organization.objects.get(id=id_organisation,admin=request.user)
     except:
         return redirect('organization_list')
     """la vue des caméras """
