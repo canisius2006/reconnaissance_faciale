@@ -1,6 +1,6 @@
 const bouton = document.querySelector('.primary')
 bouton.addEventListener('click',()=>{
-    window.location.pathname='dashboard/'
+    window.location.pathname='/list/'
 })
 
 const ajouter = document.querySelector('.secondary')

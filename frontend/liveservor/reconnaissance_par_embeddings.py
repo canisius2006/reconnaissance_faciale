@@ -42,7 +42,7 @@ app_rec = get_app_rec()
 SEUIL_COSINUS = 0.5
 
 # ─────────────────────────────────────────────────────────────
-def identifier(chemin_photo):
+def identifier(chemin_photo,id_organisation):
     """
     Identifie la personne sur une photo.
     Retourne (nom, similarité) ou ('INCONNU', similarité_max)
@@ -63,7 +63,7 @@ def identifier(chemin_photo):
     score_min = 0.5
     # Prendre le visage avec le meilleur score de détection
     visages = [visage for visage in visages if visage.det_score>score_min]
-    liste_nom, liste_embedding = embeddings_cache.obtenir()
+    liste_nom, liste_embedding = embeddings_cache.obtenir(id_organisation)
     for visage in visages:
         emb_inconnu = visage.normed_embedding
         if len(liste_nom) == 0:
@@ -100,7 +100,7 @@ def identifier(chemin_photo):
 
 
 
-def identifier_serveur_image(img):
+def identifier_serveur_image(img,id_organisation):
     """Cette fonction va nous permettre d'indentifier un visage mais en passant par le serveur avec le mode image
     Retourne (nom, similarité) ou ('INCONNU', similarité_max)"""
     personnes = {} #Un dictionnaire  vide pour récueillir les noms des personnes reconnues à la fin 
@@ -122,7 +122,7 @@ def identifier_serveur_image(img):
     score_min = 0.5
     # Prendre le visage avec le meilleur score de détection
     visages = [visage for visage in visages if visage.det_score>score_min]
-    liste_nom, liste_embedding = embeddings_cache.obtenir()
+    liste_nom, liste_embedding = embeddings_cache.obtenir(id_organisation)
     for visage in visages:
         emb_inconnu = visage.normed_embedding
         if len(liste_nom) == 0:

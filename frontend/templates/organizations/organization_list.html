@@ -73,6 +73,7 @@
                     </div>
                 </div>
                 <div class="org-actions">
+                    <a href="{% url 'dashboard' org.pk %}" class="btn btn-secondary btn-sm">Voir le dashboard</a>
                     <a href="{% url 'organization_edit' org.pk %}" class="btn btn-secondary btn-sm">Modifier</a>
                     <a href="{% url 'organization_delete' org.pk %}" class="btn btn-danger-outline btn-sm">Supprimer</a>
                 </div>
@@ -106,5 +107,6 @@
             empty.style.display = shown ? 'none' : 'block';
         });
     })();
+    
 </script>
 {% endblock %}

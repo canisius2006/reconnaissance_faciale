@@ -898,7 +898,8 @@ document.querySelector('.people_add').addEventListener('click',()=>{
             if (formobjet.file) formdata.append('file', formobjet.file);
         if (currentMethod==='image'){
             formdata.append('source','image')
-            const data    = await fetch(`${formobjet.camName}`, { method:'POST', headers:{ 'X-CSRFToken': csrfToken }, body: formdata });
+            
+            const data    = await fetch(`${formobjet.camName}/`, { method:'POST', headers:{ 'X-CSRFToken': csrfToken }, body: formdata });
             
             
             const reponse = await data.json();

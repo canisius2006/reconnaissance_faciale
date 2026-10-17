@@ -57,11 +57,10 @@ def accueil(request):
     return render(request,'accueil.html') 
 
 @login_required
-def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer la liste des noms des personnes dans la base de données et l'envoyer dans le template 
+def dashboard(request:HttpRequest,id_organisation)->HttpResponse: #Ici, nous allons recupérer la liste des noms des personnes dans la base de données et l'envoyer dans le template 
     #Premièrement , nous allons essayer de voir si la personne en question dispose d'une organisation avant d'accéder au dashboard
-    user = request.user 
     try:
-        organisation = Organization.objects.get(admin=user)
+        organisation = Organization.objects.get(id=id_organisation)
     except:
         return redirect('organization_list')
     """la vue des caméras """
@@ -74,10 +73,17 @@ def dashboard(request:HttpRequest)->HttpResponse: #Ici, nous allons recupérer l
             print(framename,url)
             return JsonResponse({'framename':framename,'url':url})
     #Nouvelle méthode pour obtenir les embeddings 
-    base:dict = {
-        f"{embedding.user.username}":embedding.data 
-            for embedding in Embedding.objects.all()
+    #1ère méthode: obtenir les embeddings pour une entreprise 
+    
+    base:dict={
+        profile.user.username:f"{Embedding.objects.get(user=profile.user).data}"
+        for profile in Profile.objects.filter(organization=organisation)
     }
+    #2ème méthode : pour toute la base ,ce qui est déconseillé
+    #base:dict = {
+    #    f"{embedding.user.username}":embedding.data 
+    #        for embedding in Embedding.objects.all()     
+    #}
     # with open(chemin_base,'r') as f:
     #     base:dict = json.load(f)
     liste = list(base.keys())
@@ -100,7 +106,7 @@ class OrganizationUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView
     model = Organization
     form_class = OrganizationForm
     template_name = 'organizations/organization_form.html'
-    success_url = reverse_lazy('dashboard')
+    success_url = reverse_lazy('organization_list')
 
     def test_func(self):
         # Vérifie si l'utilisateur connecté est bien l'admin de cette organisation
@@ -110,7 +116,7 @@ class OrganizationUpdateView(LoginRequiredMixin, UserPassesTestMixin, UpdateView
 class OrganizationDeleteView(LoginRequiredMixin, UserPassesTestMixin, DeleteView):
     model = Organization
     template_name = 'organizations/organization_confirm_delete.html'
-    success_url = reverse_lazy('dashboard')
+    success_url = reverse_lazy('organization_list')
 
     def test_func(self):
         organization = self.get_object()
@@ -126,8 +132,13 @@ class OrganizationListView(LoginRequiredMixin, ListView):
         return Organization.objects.filter(admin=self.request.user).order_by('-created_at')
 
 @login_required
-def reconnaissance_faciale_image(request:HttpRequest,name):
+def reconnaissance_faciale_image(request:HttpRequest,id_organisation,name):
     """Pour pouvoir faire la reconnaissance pour l'image envoyé sous forme de requête post"""
+    #Nous allons essayer d'abord d'avoir l'id de l'organisation 
+    try:
+        organisation = Organization.objects.get(id=id_organisation)
+    except:
+        return redirect('organization_list')
     if request.method=='POST' :
         source = request.POST.get('source')
         if source =='image':
@@ -138,7 +149,7 @@ def reconnaissance_faciale_image(request:HttpRequest,name):
             # 3. Décoder le buffer pour obtenir une image OpenCV (format BGR)
             img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
             
-            image_traite,liste_personnes = rpe.identifier_serveur_image(img) #Retourne l'image sous forme de numpy et la liste des personnes détectées
+            image_traite,liste_personnes = rpe.identifier_serveur_image(img,id_organisation) #Retourne l'image sous forme de numpy et la liste des personnes détectées
             #Le nom n'est juste que l'heure à laquelle la photo a été traité 
             nom = str(timezone.localtime().now())
             # file:///C:/projet_django/rf_projet/frontend/traitements/2026-05-22%2015:48:43.647347+00:00.jpg

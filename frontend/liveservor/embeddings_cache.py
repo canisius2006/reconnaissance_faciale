@@ -21,7 +21,7 @@ import traceback
 import numpy as np
 from django.db import connection
 
-from .models import Embedding
+from .models import Embedding,Profile,Organization
 
 TTL = 30.0   # secondes avant rechargement automatique
 DIM = 512    # taille d'un embedding buffalo_l
@@ -41,8 +41,18 @@ def invalider():
         _etat['valide'] = False
 
 
-def _charger():
-    lignes = Embedding.objects.order_by('id').values_list('user__username', 'data')
+def _charger(id_organisation):
+    #Méthode recommandé 
+    try:
+        organisation = Organization.objects.get(id=id_organisation)
+    except:
+        print("l'organisation n'existe pas ")
+    lignes:list=list({
+        profile.user.username:f"{Embedding.objects.get(user=profile.user).data}"
+        for profile in Profile.objects.filter(organization=organisation)
+    }.items())
+    #Deuxième méthode
+    #lignes = Embedding.objects.order_by('id').values_list('user__username', 'data')
     noms, vecteurs = [], []
     for nom, data in lignes:
         if isinstance(data, list) and len(data) == DIM:
@@ -55,7 +65,7 @@ def _charger():
     return np.array([], dtype=str), np.zeros((0, DIM), dtype=np.float32)
 
 
-def obtenir(fermer_connexion=False):
+def obtenir(id_organisation,fermer_connexion=False):
     """Retourne (noms, matrice) : noms[i] correspond à matrice[i].
     Si matrice est vide (aucune personne enregistrée), matrice.shape[0] == 0.
 
@@ -64,7 +74,7 @@ def obtenir(fermer_connexion=False):
     with _verrou:
         if not _etat['valide'] or time.time() - _etat['charge_a'] >= TTL:
             try:
-                noms, matrice = _charger()
+                noms, matrice = _charger(id_organisation)
                 _etat.update(noms=noms, matrice=matrice, charge_a=time.time(), valide=True)
             except Exception:
                 traceback.print_exc()
